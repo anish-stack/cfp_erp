@@ -98,12 +98,12 @@ r.post('/test/:kind', permit('settings.manage_settings'), validate({ params: z.o
       return ok(res, { ok: true, message: `Connected: ${a.FriendlyName || a.Sid || cfg.EXOTEL_SID}${a.Status ? ` (${a.Status})` : ''}${cfg.EXOTEL_CALLER_ID ? '' : ' — set Caller ID (ExoPhone) to place calls'}` });
     }
     if (kind === 'ai') {
-      const { chat, lastUsedModel } = await import('../../services/ai.js');
+      const { chat, lastUsedModel, providerName } = await import('../../services/ai.js');
       const t0 = Date.now();
-      const reply = await chat([{ role: 'user', content: 'Reply with the single word: OK' }], { maxTokens: 10, timeoutMs: 45_000 });
+      const reply = await chat([{ role: 'user', content: 'Reply with the single word: OK' }], { maxTokens: 300, timeoutMs: 45_000 });
       const used = lastUsedModel();
       const note = cfg.HF_MODEL !== 'auto' && used !== cfg.HF_MODEL ? ` (your model "${cfg.HF_MODEL}" is not served by your providers — save "${used}" or "auto" as Model)` : '';
-      return ok(res, { ok: true, message: `Hugging Face OK — ${used} replied "${reply.trim().slice(0, 30)}" in ${((Date.now() - t0) / 1000).toFixed(1)}s${note}` });
+      return ok(res, { ok: true, message: `${providerName()} OK — ${used} replied "${reply.trim().slice(0, 30)}" in ${((Date.now() - t0) / 1000).toFixed(1)}s${note}` });
     }
     if (kind === 'whatsapp') {
       const { sendWapp, wappConfigured, normalizeMobile } = await import('../../services/wapp.js');

@@ -7,7 +7,7 @@ import { validate } from '../../middleware/validate.js';
 import { asyncHandler, ok } from '../../utils/asyncHandler.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { audit } from '../../utils/audit.js';
-import { chatJson, aiConfigured, MEDICAL_RULES } from '../../services/ai.js';
+import { chatJson, aiConfigured, MEDICAL_RULES, providerName } from '../../services/ai.js';
 import { cfg } from '../../services/runtimeConfig.js';
 import { buildLandingFromAi, AI_ICONS, DEFAULT_DESIGN } from '../../constants/landing.js';
 import { CLINIC, BRANCHES } from '../../constants/clinic.js';
@@ -27,7 +27,7 @@ async function clinicContext() {
   return `Clinic: ${s?.clinic?.name || CLINIC.name}. ${s?.clinic?.tagline || CLINIC.tagline}. Branches in Delhi NCR: ${BRANCHES.map((b) => b.name).join(', ')}. Doctors: Dr. Rakesh Gupta and Dr. Ruchi Gupta (Ayurvedic anorectal surgeons). Treatments offered: Kshar Sutra, Kshar Karma, Laser (piles, fistula, fissure, pilonidal sinus), Infrared Coagulation (IRC), herbal medicines. Free consultation.`;
 }
 
-r.get('/status', permit('cms.view'), (_req, res) => ok(res, { configured: aiConfigured(), model: cfg.HF_MODEL }));
+r.get('/status', permit('cms.view'), (_req, res) => ok(res, { configured: aiConfigured(), model: cfg.HF_MODEL, provider: providerName() }));
 
 // ---------------------------------------------------------------- whole landing page from a brief
 r.post('/landing', permit('cms.create'), aiLimiter, validate({ body: z.object({ brief: z.string().trim().min(5).max(1500), language: z.enum(['en', 'hi', 'hinglish']).default('en'), tone: z.enum(['caring', 'professional', 'urgent', 'friendly']).default('caring') }) }), asyncHandler(async (req, res) => {

@@ -16,7 +16,7 @@ const GROUPS = {
   smtp: { title: 'Email (SMTP)', icon: Mail, hint: 'Lead alerts, daily stock alerts. Port 465 = SSL, 587 = STARTTLS.', test: 'smtp', testTo: 'Send test mail to (email)' },
   exotel: { title: 'Exotel (dialer, IVR, recordings)', icon: PhoneCall, hint: 'Exotel dashboard → Settings → API. Mumbai accounts use api.in.exotel.com.', test: 'exotel' },
   whatsapp: { title: 'WhatsApp (sms4power WAPP)', icon: MessageCircle, hint: 'OTP, booking, prescription, invoice messages.', test: 'whatsapp', testTo: 'Send test message to (mobile)' },
-  ai: { title: 'AI writer (Hugging Face)', icon: Sparkles, hint: 'Writes CMS landing pages and rewrites sections. Token: huggingface.co → Settings → Access Tokens → fine-grained with “Make calls to Inference Providers”.', test: 'ai' },
+  ai: { title: 'AI writer', icon: Sparkles, hint: 'Writes CMS landing pages and rewrites sections. Free options: Groq (console.groq.com/keys) or Google Gemini (aistudio.google.com/apikey). Hugging Face free credits are very small. OpenRouter: only “:free” models are used automatically.', test: 'ai' },
 };
 const LABEL = {
   APP_NAME: 'App name', STORAGE_DRIVER: 'Storage driver',
@@ -26,7 +26,7 @@ const LABEL = {
   SMTP_HOST: 'SMTP host', SMTP_PORT: 'SMTP port', SMTP_USER: 'SMTP username', SMTP_PASS: 'SMTP password', SMTP_FROM: 'From address', ALERT_EMAILS: 'Alert emails (comma separated)',
   EXOTEL_SID: 'Account SID', EXOTEL_API_KEY: 'API key', EXOTEL_API_TOKEN: 'API token', EXOTEL_SUBDOMAIN: 'API host (region)', EXOTEL_CALLER_ID: 'Caller ID (ExoPhone)', EXOTEL_WEBHOOK_TOKEN: 'Webhook token (random 32+ chars)',
   WAPP_API_URL: 'API URL', WAPP_API_KEY: 'API key', WAPP_COUNTRY: 'Country code',
-  HF_TOKEN: 'Hugging Face access token', HF_MODEL: 'Model (auto recommended)', HF_API_URL: 'API URL (OpenAI-compatible router)',
+  AI_PROVIDER: 'AI provider', HF_TOKEN: 'API key / token of the selected provider', HF_MODEL: 'Model (auto recommended)', HF_API_URL: 'API URL (only for Hugging Face / Custom)',
 };
 const SUBHEAD = { S3_BUCKET: 'AWS S3', R2_ACCOUNT_ID: 'Cloudflare R2', CLOUDINARY_CLOUD_NAME: 'Cloudinary' };
 const SRC = { settings: ['Saved here', 'success'], env: ['From .env', 'secondary'], none: ['Not set', 'outline'] };
@@ -125,7 +125,7 @@ export function IntegrationSettings({ editable }) {
   return (
     <div className="space-y-4">
       <p className="rounded-md bg-muted p-3 text-xs text-muted-foreground">Keys saved here override the server <code>.env</code> and apply within 30 seconds — no restart needed. Secrets are stored encrypted and are never shown again; leave a secret blank to keep it. ↺ removes a saved value so the <code>.env</code> value is used.</p>
-      {Object.keys(GROUPS).map((g) => q.data[g] && <Group key={g} group={g} rows={q.data[g]} editable={editable} onSaved={() => { qc.invalidateQueries({ queryKey: ['integrations'] }); qc.invalidateQueries({ queryKey: ['call-config'] }); }} />)}
+      {Object.keys(GROUPS).map((g) => q.data[g] && <Group key={g} group={g} rows={q.data[g]} editable={editable} onSaved={() => { qc.invalidateQueries({ queryKey: ['integrations'] }); qc.invalidateQueries({ queryKey: ['call-config'] }); qc.invalidateQueries({ queryKey: ['ai-models'] }); qc.invalidateQueries({ queryKey: ['ai-status'] }); }} />)}
     </div>
   );
 }

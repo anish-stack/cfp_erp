@@ -30,11 +30,27 @@ export function AiCreateDialog({ open, onOpenChange, fields, campaigns = [] }) {
   const [campaign, setCampaign] = useState('');
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [aiDown, setAiDown] = useState('');
 
   const generate = async () => {
     setBusy(true);
     try {
+      setAiDown('');
       setDraft(await post('/crm/ai/landing', { brief, language, tone }, { timeout: 120_000 }));
+    } catch (e) {
+      if ([402, 429, 502, 503, 504].includes(e.response?.status)) setAiDown(errMsg(e));
+      else toast.error(errMsg(e));
+    } finally { setBusy(false); }
+  };
+  /** no AI credits → same page from the ready-made template; edit text in the designer */
+  const fromTemplate = async () => {
+    setBusy(true);
+    try {
+      const t = await get('/crm/landing-template');
+      const name = (brief.trim() || 'New landing page').slice(0, 80);
+      const slug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 50) || 'landing'}-${Math.random().toString(36).slice(2, 6)}`;
+      setDraft({ name, slug, kind: 'landing_page', page: { ctaText: 'Book Free Consultation', seoTitle: name.slice(0, 60) }, blocks: t.blocks, design: t.design });
+      setAiDown('');
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   const create = async () => {
@@ -53,7 +69,7 @@ export function AiCreateDialog({ open, onOpenChange, fields, campaigns = [] }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent title="Create landing page with AI" size="lg">
-        {status.data && !status.data.configured && <p className="rounded-md bg-amber-50 p-2 text-sm text-amber-800">AI is not set up. Add a Hugging Face token in <b>Settings → Integrations → AI writer</b>.</p>}
+        {status.data && !status.data.configured && <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800"><span>AI is not set up. Add an API key in <b>Settings → Integrations → AI writer</b>.</span><Button size="sm" variant="outline" loading={busy} onClick={fromTemplate}>Use template</Button></div>}
         {!draft ? (
           <div className="space-y-3">
             <Field label="What is this page for?" hint="Treatment, area/branch, audience, ad platform, offer">
@@ -65,6 +81,12 @@ export function AiCreateDialog({ open, onOpenChange, fields, campaigns = [] }) {
               <Field label="Tone"><Select value={tone} onChange={(e) => setTone(e.target.value)}><option value="caring">Caring</option><option value="professional">Professional</option><option value="friendly">Friendly</option><option value="urgent">Urgent (offer)</option></Select></Field>
               <Field label="Campaign"><Select value={campaign} onChange={(e) => setCampaign(e.target.value)} placeholder="From UTM">{campaigns.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}</Select></Field>
             </div>
+            {aiDown && (
+              <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p>{aiDown}</p>
+                <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" loading={busy} onClick={fromTemplate}>Use ready-made template instead</Button><Button size="sm" variant="ghost" asChild><a href="/settings">Change AI provider</a></Button></div>
+              </div>
+            )}
             <p className="text-[11px] text-muted-foreground">AI follows medical-advertising rules (no cure guarantees, no fake numbers). Always review the text before publishing.</p>
             <div className="flex justify-end"><Button loading={busy} disabled={brief.trim().length < 5 || status.data?.configured === false} onClick={generate}><Wand2 /> {busy ? 'Writing… (20–60 s)' : 'Generate page'}</Button></div>
           </div>

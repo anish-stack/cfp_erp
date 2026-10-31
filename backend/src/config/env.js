@@ -48,7 +48,8 @@ const schema = z.object({
   CLOUDINARY_API_KEY: z.string().optional().default(''),
   CLOUDINARY_API_SECRET: z.string().optional().default(''),
   CLOUDINARY_FOLDER: z.string().optional().default('cpf'),
-  // Hugging Face (AI writing for CMS landing pages) — OpenAI-compatible router
+  // AI writer for CMS (any OpenAI-compatible chat API). AI_PROVIDER picks the URL; token/model/url keys keep the HF_ names
+  AI_PROVIDER: z.enum(['huggingface', 'groq', 'gemini', 'openrouter', 'custom']).default('huggingface'),
   HF_TOKEN: z.string().optional().default(''),
   HF_MODEL: z.string().optional().default('auto'), // auto = best available chat model for your enabled providers
   HF_API_URL: z.string().optional().default('https://router.huggingface.co/v1/chat/completions'),
