@@ -48,5 +48,13 @@ function logoBuffer(file) {
 export async function pdfBranding() {
   const s = await getSettings();
   const showLogo = s.billing?.showLogoOnPdf !== false;
-  return { clinic: s.clinic || {}, footer: s.billing?.invoiceFooter, logo: showLogo ? logoBuffer(s.clinic?.logoFile) : null };
+  const hex = (v) => (/^#[0-9a-f]{6}$/i.test(v || '') ? v : null);
+  return {
+    clinic: s.clinic || {},
+    footer: s.billing?.invoiceFooter,
+    logo: showLogo ? logoBuffer(s.clinic?.logoFile) : null,
+    color: hex(s.theme?.pdf) || hex(s.theme?.console?.primary) || '#e21f26',
+    rxFooter: s.pdf?.rxFooter,
+    showSignature: s.pdf?.showSignature !== false,
+  };
 }

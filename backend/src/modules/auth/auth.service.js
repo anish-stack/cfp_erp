@@ -10,7 +10,9 @@ const LOCK_AFTER = 5;
 const LOCK_MINUTES = 15;
 
 export async function staffLogin(login) {
-  const q = login.login.includes('@') ? { email: login.login.toLowerCase() } : { phone: login.login };
+  const id = String(login.login).trim();
+  // email, or mobile typed any way (+91 98xx-xxxxxx, 098…) → last 10 digits
+  const q = id.includes('@') ? { email: id.toLowerCase() } : { phone: id.replace(/\D/g, '').slice(-10) };
   const user = await User.findOne(q).select('+passwordHash +tokenVersion +failedLogins +lockUntil');
   if (!user || !user.isActive) throw ApiError.unauthorized('Invalid credentials');
   if (user.lockUntil && user.lockUntil > new Date()) throw ApiError.tooMany('Account locked. Try again later');

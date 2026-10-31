@@ -48,7 +48,7 @@ mongosh --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]}
 redis-server
 
 cd backend && cp .env.example .env    # fill JWT secrets + SEED_ADMIN_PASSWORD
-npm i && npm run seed
+npm i && npm run seed      # base + demo data only in modules that are still EMPTY (safe to re-run). seed:base = clinic/branches/roles/admin only, seed:reset = WIPE DB & reseed
 npm run dev        # API :5000
 npm run worker     # notifications / reminders / daily jobs
 

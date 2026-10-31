@@ -30,6 +30,10 @@ import publicRoutes from './modules/public/public.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import reportRoutes from './modules/reports/reports.routes.js';
 import callRoutes from './modules/calls/calls.routes.js';
+import mediaRoutes from './modules/cms/media.routes.js';
+import integrationRoutes from './modules/admin/integrations.routes.js';
+import cmsAiRoutes from './modules/crm/ai.routes.js';
+import { LOCAL_MEDIA_DIR } from './services/storage.js';
 import exotelWebhooks from './modules/calls/exotel.webhooks.js';
 
 export function buildApp() {
@@ -49,6 +53,10 @@ export function buildApp() {
   app.use(express.urlencoded({ extended: true, limit: '200kb' })); // Exotel form callbacks
   app.use(cookieParser());
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
+
+  // public media (local storage driver) — images/videos used on landing pages, cross-origin readable
+  app.use('/media', (_req, res, next) => { res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); res.setHeader('X-Content-Type-Options', 'nosniff'); next(); },
+    express.static(LOCAL_MEDIA_DIR, { maxAge: '365d', immutable: true, index: false, dotfiles: 'deny' }));
 
   app.get('/health', (_req, res) =>
     res.json({
@@ -77,6 +85,9 @@ export function buildApp() {
   v1.use('/inventory', inventoryRoutes);
   v1.use('/billing', billingRoutes);
   v1.use('/crm/calls', callRoutes);
+  v1.use('/cms/media', mediaRoutes);
+  v1.use('/crm/ai', cmsAiRoutes);
+  v1.use('/admin/integrations', integrationRoutes);
   v1.use('/crm', crmRoutes);
   v1.use('/admin', adminRoutes);
   v1.use('/reports', reportRoutes);

@@ -5,6 +5,7 @@ import { env } from '../../config/env.js';
 import { Call } from '../../models/Crm.js';
 import * as exotel from '../../services/exotel.js';
 import { finishCall, resolveCaller, ivrOption, inboundTargets, agentByPhone } from './calls.service.js';
+import { cfg } from '../../services/runtimeConfig.js';
 
 /**
  * Exotel → us. Every URL carries ?t=EXOTEL_WEBHOOK_TOKEN.
@@ -77,7 +78,7 @@ r.get('/connect', asyncHandler(async (req, res) => {
   res.json({
     fetch_after_attempt: false,
     destination: { numbers: numbers.map((n) => `+91${n}`) },
-    outgoing_phone_number: env.EXOTEL_CALLER_ID || undefined,
+    outgoing_phone_number: cfg.EXOTEL_CALLER_ID || undefined,
     record: true,
     recording_channels: 'dual',
     max_ringing_duration: 30,

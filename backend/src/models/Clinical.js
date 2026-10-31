@@ -50,10 +50,18 @@ const rxSchema = new mongoose.Schema(
     doctor: { type: ObjectId, ref: 'Doctor', required: true },
     appointment: { type: ObjectId, ref: 'Appointment' },
     record: { type: ObjectId, ref: 'MedicalRecord' },
+    mode: { type: String, enum: ['typed', 'image', 'both'], default: 'typed' }, // image = scanned / photographed handwritten Rx
+    template: { type: ObjectId, ref: 'PrescriptionTemplate' },
+    templateName: String,
+    complaints: String,
     diagnosis: String,
+    vitals: { bp: String, pulse: Number, temp: Number, weightKg: Number, spo2: Number },
     items: { type: [rxItem], default: [] },
+    investigations: String,
     advice: String,
     diet: String,
+    notes: String,
+    images: [{ storedName: String, originalName: String, mime: String, size: Number }],
     followUpDate: String,
     createdBy: { type: ObjectId, ref: 'User' },
   },
@@ -99,3 +107,24 @@ const docSchema = new mongoose.Schema(
   { timestamps: true }
 );
 export const PatientDocument = mongoose.model('PatientDocument', docSchema);
+
+// ---------- Prescription template ("prescription type") ----------
+const tplSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    condition: { type: String, trim: true }, // Piles / Fistula / Fissure / Pilonidal / Post-op …
+    diagnosis: String,
+    complaints: String,
+    items: { type: [rxItem], default: [] },
+    investigations: String,
+    advice: String,
+    diet: String,
+    followUpDays: { type: Number, min: 0, max: 365 },
+    doctor: { type: ObjectId, ref: 'Doctor' }, // null = shared by all doctors
+    isActive: { type: Boolean, default: true },
+    createdBy: { type: ObjectId, ref: 'User' },
+  },
+  { timestamps: true }
+);
+tplSchema.index({ name: 1 });
+export const PrescriptionTemplate = mongoose.model('PrescriptionTemplate', tplSchema);

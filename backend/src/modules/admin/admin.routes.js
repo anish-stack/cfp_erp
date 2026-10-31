@@ -30,6 +30,12 @@ const settingsBody = z.object({
   billing: z.object({ gstEnabled: z.boolean(), taxInclusive: z.boolean(), consultationGst: z.number().min(0).max(28), invoiceFooter: z.string().max(300), allowNegativeStock: z.boolean(), showLogoOnPdf: z.boolean() }).partial(),
   inventory: z.object({ expiryAlertDays: z.number().int().min(7).max(365) }).partial(),
   notifications: z.object(Object.fromEntries(['sms', 'whatsapp', 'email', 'welcome', 'appointmentUpdates', 'checkinToken', 'noShow', 'reminders', 'prescription', 'invoice', 'paymentReceipt', 'refunds', 'followupReminders', 'leadAutoReply', 'staffLeadAlert', 'dailyStockAlerts'].map((k) => [k, z.boolean()]))).partial(),
+  theme: z.object({
+    console: z.object({ primary: z.string().regex(/^#[0-9a-f]{6}$/i), sidebar: z.string().regex(/^#[0-9a-f]{6}$/i), radius: z.number().min(0).max(20) }).partial(),
+    booking: z.object({ primary: z.string().regex(/^#[0-9a-f]{6}$/i), background: z.string().regex(/^#[0-9a-f]{6}$/i) }).partial(),
+    pdf: z.string().regex(/^(#[0-9a-f]{6})?$/i),
+  }).partial(),
+  pdf: z.object({ rxFooter: z.string().max(400), showSignature: z.boolean() }).partial(),
   crm: z.object({
     autoAssign: z.enum(['none', 'round_robin']),
     inboundRouting: z.enum(['lead_owner', 'branch', 'sales_pool']),
@@ -41,7 +47,14 @@ const settingsBody = z.object({
 r.patch('/settings', permit('settings.manage_settings'), validate({ body: settingsBody }), asyncHandler(async (req, res) => {
   const before = await getSettings();
   const $set = {};
-  for (const [section, vals] of Object.entries(req.body)) for (const [k, v] of Object.entries(vals)) $set[`${section}.${k}`] = v;
+  // nested objects (theme.console.primary …) flattened to dot paths so partial updates don't wipe siblings
+  const flat = (obj, prefix) => {
+    for (const [k, v] of Object.entries(obj)) {
+      if (v && typeof v === 'object' && !Array.isArray(v) && !(k === 'ivrMenu')) flat(v, `${prefix}.${k}`);
+      else $set[`${prefix}.${k}`] = v;
+    }
+  };
+  for (const [section, vals] of Object.entries(req.body)) flat(vals, section);
   const s = await Settings.findByIdAndUpdate('global', { $set }, { upsert: true, new: true });
   clearSettingsCache();
   audit(req, { action: 'settings.manage_settings', entity: 'Settings', before, after: s });

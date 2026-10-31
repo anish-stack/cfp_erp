@@ -1,6 +1,7 @@
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { NotificationLog } from '../models/Misc.js';
+import { cfg } from './runtimeConfig.js';
 
 /** sms4power WAPP status codes */
 export const WAPP_CODES = {
@@ -23,7 +24,7 @@ export class WappError extends Error {
   }
 }
 
-export const wappConfigured = () => Boolean(env.WAPP_API_KEY);
+export const wappConfigured = () => Boolean(cfg.WAPP_API_KEY);
 
 const MAX_LEN = 4000;
 /** 9000000000–9000009999 is reserved for demo data (seed:demo) and never messaged */
@@ -39,15 +40,15 @@ const log = (entry) => NotificationLog.create({ channel: 'whatsapp', ...entry })
 
 /** build request URL (exported for tests). apikey is redacted from anything we log. */
 export function buildUrl({ mobile, msg, pdf, img1, img2, scheduleon }) {
-  const u = new URL(env.WAPP_API_URL);
-  u.searchParams.set('apikey', env.WAPP_API_KEY);
+  const u = new URL(cfg.WAPP_API_URL);
+  u.searchParams.set('apikey', cfg.WAPP_API_KEY);
   u.searchParams.set('mobile', mobile);
   u.searchParams.set('msg', msg.length > MAX_LEN ? `${msg.slice(0, MAX_LEN - 1)}…` : msg);
   if (pdf) u.searchParams.set('pdf', pdf);
   if (img1) u.searchParams.set('img1', img1);
   if (img2) u.searchParams.set('img2', img2);
   if (scheduleon) u.searchParams.set('scheduleon', scheduleon);
-  if (env.WAPP_COUNTRY) u.searchParams.set('country', env.WAPP_COUNTRY);
+  if (cfg.WAPP_COUNTRY) u.searchParams.set('country', cfg.WAPP_COUNTRY);
   return u;
 }
 

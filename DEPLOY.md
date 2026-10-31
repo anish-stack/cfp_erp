@@ -33,7 +33,7 @@ Redis: keep bound to 127.0.0.1, set `requirepass`, use `REDIS_URL=redis://:<pwd>
 sudo mkdir -p /var/www /var/log/cpf && sudo chown $USER /var/www /var/log/cpf
 git clone <repo> /var/www/cpf-erp && cd /var/www/cpf-erp
 cd backend && cp .env.example .env && nano .env      # NODE_ENV=production, secrets, CORS_ORIGINS, COOKIE_DOMAIN=.centreforpilesandfistula.com
-npm ci --omit=dev && npm run seed
+npm ci --omit=dev && npm run seed:base
 cd ../frontend
 printf 'VITE_API_URL=https://api.centreforpilesandfistula.com/api/v1\nVITE_BOOKING_URL=https://appointment.centreforpilesandfistula.com\n' | tee console/.env.production booking/.env.production
 npm ci && npm run build
@@ -66,7 +66,7 @@ Copy `/var/backups/cpf-mongo` off-server (rclone/S3).
 ## 8. Updates
 ```bash
 cd /var/www/cpf-erp && git pull
-(cd backend && npm ci --omit=dev && npm run seed) && (cd frontend && npm ci && npm run build)
+(cd backend && npm ci --omit=dev && npm run seed:base) && (cd frontend && npm ci && npm run build)
 pm2 reload cpf-api && pm2 restart cpf-worker
 ```
 

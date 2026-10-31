@@ -11,8 +11,7 @@ import { objectId, ymd, paging } from '../../utils/zod.js';
 import { istDayRange, addDays } from '../../utils/time.js';
 import { Invoice, Payment, CreditNote } from '../../models/Billing.js';
 import { Patient } from '../../models/Patient.js';
-import { pdfBranding } from '../../services/branding.js';
-import { renderInvoicePdf } from '../../services/pdf.js';
+import { loadDocument, streamDocument } from '../../services/documents.js';
 import * as svc from './billing.service.js';
 import * as notify from '../../services/notify.js';
 
@@ -113,11 +112,13 @@ r.get('/invoices/:id', permit.any('billing.view', 'pos.view'), validate({ params
 
 r.get('/invoices/:id/pdf', permit.any('billing.view', 'pos.view'), validate({ params: idParam }), asyncHandler(async (req, res) => {
   const inv = await loadInvoice(req);
-  await inv.populate([{ path: 'patient' }, { path: 'branch' }, { path: 'doctor', select: 'name' }, { path: 'createdBy', select: 'name' }]);
-  const b = await pdfBranding();
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${inv.invoiceNo.replace(/\//g, '-')}.pdf"`);
-  renderInvoicePdf(inv, b.clinic, b.footer, res, b.logo);
+  return streamDocument(res, 'invoice', inv._id, { download: req.query.download === '1' });
+}));
+
+r.get('/payments/:id/receipt', permit.any('billing.view', 'pos.view'), validate({ params: idParam }), asyncHandler(async (req, res) => {
+  const loaded = await loadDocument('receipt', req.params.id);
+  req.assertBranch(loaded.branch);
+  return streamDocument(res, 'receipt', loaded, { download: req.query.download === '1' });
 }));
 
 r.post('/invoices/:id/payments', permit.any('billing.create', 'pos.create'), validate({ params: idParam, body: z.object({ mode: mode.optional(), amount: amount.optional(), reference: z.string().max(60).optional(), notes: z.string().max(200).optional(), useAdvance: z.boolean().default(false) }).refine((d) => d.useAdvance || (d.mode && d.amount), 'mode and amount required') }), asyncHandler(async (req, res) => {

@@ -11,11 +11,22 @@ import { loadMe } from '@/lib/session';
 import { appMode } from '@/lib/mode';
 import Login from '@/pages/Login';
 import { EmptyState } from '@/components/common/EmptyState';
+import { usePublicInfo } from '@/hooks/queries';
+import { applyTheme } from '@/lib/theme';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: (n, e) => n < 2 && ![401, 403, 404].includes(e?.response?.status), refetchOnWindowFocus: false } },
 });
 
+
+function ThemeLoader() {
+  const { data } = usePublicInfo();
+  useEffect(() => {
+    if (data?.theme?.console) applyTheme(data.theme.console);
+    if (data?.clinic?.name) document.title = `${data.clinic.name} · Console`;
+  }, [data]);
+  return null;
+}
 
 function Guard({ perm, children }) {
   const can = useCan();
@@ -57,6 +68,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={qc}>
+      <ThemeLoader />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />

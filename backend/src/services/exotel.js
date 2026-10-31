@@ -1,16 +1,17 @@
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { ApiError } from '../utils/ApiError.js';
+import { cfg } from './runtimeConfig.js';
 
 /**
  * Exotel v1 API.
  *  - connect(): click-to-call. Exotel rings the AGENT first, then bridges to the CUSTOMER, recording both legs.
  *  - Status callback (terminal event) lands on /public/exotel/status with our Call id in CustomField.
  */
-export const exotelConfigured = () => Boolean(env.EXOTEL_SID && env.EXOTEL_API_KEY && env.EXOTEL_API_TOKEN && env.EXOTEL_CALLER_ID);
+export const exotelConfigured = () => Boolean(cfg.EXOTEL_SID && cfg.EXOTEL_API_KEY && cfg.EXOTEL_API_TOKEN && cfg.EXOTEL_CALLER_ID);
 
-const authHeader = () => `Basic ${Buffer.from(`${env.EXOTEL_API_KEY}:${env.EXOTEL_API_TOKEN}`).toString('base64')}`;
-const base = () => `https://${env.EXOTEL_SUBDOMAIN.replace(/^https?:\/\//, '').replace(/\/$/, '')}/v1/Accounts/${env.EXOTEL_SID}`;
+const authHeader = () => `Basic ${Buffer.from(`${cfg.EXOTEL_API_KEY}:${cfg.EXOTEL_API_TOKEN}`).toString('base64')}`;
+const base = () => `https://${cfg.EXOTEL_SUBDOMAIN.replace(/^https?:\/\//, '').replace(/\/$/, '')}/v1/Accounts/${cfg.EXOTEL_SID}`;
 
 /** E.164-ish for Exotel: 0XXXXXXXXXX (Indian convention accepted by Exotel) */
 export const toExotelNumber = (n) => {
@@ -25,14 +26,14 @@ export const tenDigits = (n) => {
 
 export const webhookUrl = (path) => {
   const u = new URL(`${env.PUBLIC_API_URL.replace(/\/$/, '')}/api/v1/public/exotel/${path}`);
-  if (env.EXOTEL_WEBHOOK_TOKEN) u.searchParams.set('t', env.EXOTEL_WEBHOOK_TOKEN);
+  if (cfg.EXOTEL_WEBHOOK_TOKEN) u.searchParams.set('t', cfg.EXOTEL_WEBHOOK_TOKEN);
   return u.toString();
 };
 
 export function verifyWebhookToken(t) {
-  if (!env.EXOTEL_WEBHOOK_TOKEN) return !env.isProd; // dev convenience; prod requires a token
+  if (!cfg.EXOTEL_WEBHOOK_TOKEN) return !env.isProd; // dev convenience; prod requires a token
   const a = Buffer.from(String(t || ''));
-  const b = Buffer.from(env.EXOTEL_WEBHOOK_TOKEN);
+  const b = Buffer.from(cfg.EXOTEL_WEBHOOK_TOKEN);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
@@ -46,7 +47,7 @@ export function connectBody({ agentPhone, customerPhone, callId, callerId }) {
   const p = new URLSearchParams();
   p.set('From', from);
   p.set('To', to);
-  p.set('CallerId', callerId || env.EXOTEL_CALLER_ID);
+  p.set('CallerId', callerId || cfg.EXOTEL_CALLER_ID);
   p.set('CallType', 'trans');
   p.set('Record', 'true');
   p.set('RecordingChannels', 'dual');
@@ -69,7 +70,10 @@ export async function connect({ agentPhone, customerPhone, callId, callerId }) {
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const msg = json?.RestException?.Message || json?.message || `HTTP ${res.status}`;
+    let msg = json?.RestException?.Message || json?.message || `HTTP ${res.status}`;
+    if (/kyc/i.test(msg)) msg += ' → Complete KYC in Exotel dashboard (my.exotel.com → Settings → KYC). Calls work automatically once approved.';
+    else if (/whitelist|dnd|not allowed/i.test(msg)) msg += ' → On a trial Exotel account, add this number under "Whitelisted numbers" or complete KYC.';
+    else if (res.status === 401) msg += ' → Check EXOTEL_API_KEY / EXOTEL_API_TOKEN / EXOTEL_SID in .env.';
     throw new ApiError(res.status === 401 || res.status === 403 ? 502 : 400, `Exotel: ${msg}`);
   }
   return json.Call || json;
@@ -88,7 +92,7 @@ export async function getCall(sid) {
 export async function fetchRecording(url, range) {
   const u = new URL(url);
   const headers = {};
-  if (/(^|\.)exotel\.(com|in)$/.test(u.hostname) && env.EXOTEL_API_KEY) headers.Authorization = authHeader();
+  if (/(^|\.)exotel\.(com|in)$/.test(u.hostname) && cfg.EXOTEL_API_KEY) headers.Authorization = authHeader();
   if (range) headers.Range = range;
   return fetch(u, { headers, redirect: 'follow' });
 }

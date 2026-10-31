@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CalendarClock, MapPin, Stethoscope, XCircle, Phone } from 'lucide-react';
+import { CalendarClock, MapPin, Stethoscope, XCircle, Phone, Download } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DateStrip, SlotGrid } from '@/components/SlotGrid';
-import { get, post } from '@/lib/api';
+import { get, post, openDoc } from '@/lib/api';
 import { usePatient } from '@/store/patient';
 import { cn, errMsg, fmtDate, fmtTime, todayIST } from '@/lib/utils';
 
@@ -45,7 +45,7 @@ export default function MyAppointments() {
   const [scope, setScope] = useState('upcoming');
   const [resched, setResched] = useState(null);
   const { data = [], isLoading } = useQuery({ queryKey: ['my-appts', scope], enabled: !!token, queryFn: () => get('/portal/appointments', { scope }) });
-  if (!token) return <Card className="p-6 text-center"><p>Please verify your mobile to see appointments.</p><Button asChild className="mt-3"><Link to="/">Login</Link></Button></Card>;
+  if (!token) return <Card className="p-6 text-center"><p>Please verify your mobile to see appointments.</p><Button asChild className="mt-3"><Link to="/login?next=/appointments">Login</Link></Button></Card>;
 
   const cancel = async (a) => {
     if (!confirm(`Cancel appointment ${a.bookingId}?`)) return;
@@ -87,6 +87,7 @@ export default function MyAppointments() {
             <div className="mt-3 flex gap-2">
               <Button size="sm" variant="outline" onClick={() => setResched(resched === a._id ? null : a._id)}><CalendarClock /> Reschedule</Button>
               <Button size="sm" variant="ghost" className="text-destructive" onClick={() => cancel(a)}><XCircle /> Cancel</Button>
+              <Button size="sm" variant="ghost" onClick={() => openDoc('slip', a._id, { download: true, filename: `${a.bookingId}.pdf` }).catch((e) => toast.error(errMsg(e)))}><Download /> Slip</Button>
             </div>
           )}
           {resched === a._id && <Reschedule appt={a} onDone={() => { setResched(null); qc.invalidateQueries({ queryKey: ['my-appts'] }); }} />}

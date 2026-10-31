@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, UserPlus, ChevronLeft, ChevronRight, List, Columns3, CalendarRange } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable, Pagination } from '@/components/common/DataTable';
@@ -89,8 +89,9 @@ export default function Appointments() {
   const [page, setPage] = useState(1);
   const [dialog, setDialog] = useState(null);
   const dq = useDebounce(q);
+  const nav = useNavigate();
   const openId = sp.get('open');
-  const setOpen = (id) => setSp(id ? { open: id } : {});
+  const setOpen = (id) => (id ? nav(`/appointments/${id}`) : setSp({}));
   const { data: doctors = [] } = useDoctors(branchId);
 
   const params = { page, limit: 25, date: allDates ? undefined : date, status: status || undefined, doctor: doctor || undefined, q: dq || undefined };
@@ -114,7 +115,7 @@ export default function Appointments() {
         title="Appointments"
         description={summary ? `${fmtDate(date)} · ${Object.entries(summary).map(([k, v]) => `${v} ${k.replace('_', ' ')}`).join(' · ') || 'none'}` : ' '}
         actions={<>
-          <Can perm="walkins.create"><Button variant="outline" onClick={() => setDialog('walkin')}><UserPlus /> Walk-in</Button></Can>
+          <Can perm="walkins.create"><Button variant="outline" onClick={() => nav('/walkin')}><UserPlus /> Walk-in</Button></Can>
           <Can perm="appointments.create"><Button onClick={() => setDialog('book')}><Plus /> Book</Button></Can>
         </>}
       />
@@ -145,7 +146,7 @@ export default function Appointments() {
         <TabsContent value="week"><WeekBoard date={date} onOpen={setOpen} /></TabsContent>
       </Tabs>
       <BookDialog open={dialog === 'book' || dialog === 'walkin'} mode={dialog || 'book'} onOpenChange={(o) => !o && setDialog(null)} onDone={(a) => setOpen(a._id)} />
-      <AppointmentSheet id={openId} onOpenChange={(o) => !o && setOpen(null)} />
+      {openId && <AppointmentSheet id={openId} onOpenChange={(o) => !o && setSp({})} />}
     </div>
   );
 }

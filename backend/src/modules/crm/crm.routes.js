@@ -11,6 +11,7 @@ import { crudRouter } from '../../utils/crud.js';
 import { objectId, ymd, paging } from '../../utils/zod.js';
 import { istDayRange, todayIST } from '../../utils/time.js';
 import { toCsv } from '../../utils/csv.js';
+import { cpfLandingTemplate, DEFAULT_DESIGN } from '../../constants/landing.js';
 import { Lead, LeadStage, LeadActivity, Task, SalesTarget, Campaign, EnquiryForm, LEAD_SOURCES } from '../../models/Crm.js';
 import { User } from '../../models/User.js';
 import { Appointment } from '../../models/Appointment.js';
@@ -432,6 +433,11 @@ r.get('/dashboard', permit('leads.view'), asyncHandler(async (req, res) => {
 
 // ---------- CMS: forms & landing pages ----------
 const fieldSchema = z.object({ key: z.string().regex(/^[a-z][a-z0-9_]*$/), label: z.string().min(1).max(80), type: z.enum(['text', 'tel', 'email', 'number', 'textarea', 'select', 'radio', 'checkbox', 'date']).default('text'), required: z.boolean().default(false), options: z.array(z.string().max(80)).max(30).optional(), placeholder: z.string().max(120).optional(), mapTo: z.enum(['name', 'phone', 'email', 'city', 'condition', 'branch']).nullable().optional() });
+r.get('/landing-template', permit('cms.view'), (_req, res) => ok(res, { blocks: cpfLandingTemplate(), design: DEFAULT_DESIGN }));
+export const BLOCK_TYPES = ['header', 'hero', 'form', 'gallery', 'features', 'text', 'list', 'imageText', 'cta', 'stats', 'faq', 'image', 'video', 'doctors', 'footer', 'spacer'];
+const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const blockSchema = z.object({ id: z.string().min(1).max(40), type: z.enum(BLOCK_TYPES), hidden: z.boolean().optional(), props: z.record(z.any()).default({}) })
+  .refine((b) => JSON.stringify(b.props).length < 60_000, 'Block content too large');
 r.use('/forms', crudRouter({
   model: EnquiryForm, module: 'cms', search: ['name', 'slug'], populate: [{ path: 'campaign', select: 'name' }, { path: 'branch', select: 'name' }],
   schema: z.object({
@@ -440,6 +446,8 @@ r.use('/forms', crudRouter({
     fields: z.array(fieldSchema).max(30).refine((f) => f.some((x) => x.mapTo === 'phone'), 'Form needs a field mapped to phone').refine((f) => new Set(f.map((x) => x.key)).size === f.length, 'Field keys must be unique'),
     campaign: objectId.optional().nullable(), branch: objectId.optional().nullable(), defaultSource: z.enum(LEAD_SOURCES).optional(), assignTo: objectId.optional().nullable(),
     successMessage: z.string().max(300).optional(), redirectUrl: z.string().url().optional().or(z.literal('')), isActive: z.boolean().optional(),
+    blocks: z.array(blockSchema).max(60).optional(),
+    design: z.object({ primary: hex.optional(), accent: hex.optional(), dark: hex.optional(), tint: hex.optional(), cta: hex.optional(), font: z.enum(['Inter', 'Poppins', 'Montserrat', 'Roboto', 'Lato', 'Open Sans', 'Nunito']).optional(), showHeader: z.boolean().optional() }).optional(),
   }),
 }));
 

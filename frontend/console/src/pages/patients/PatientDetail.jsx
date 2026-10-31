@@ -15,12 +15,15 @@ import { FormBuilder } from '@/components/common/FormBuilder';
 import { Field } from '@/components/common/Field';
 import { Can } from '@/components/common/Can';
 import { BookDialog } from '@/pages/appointments/BookDialog';
-import { RecordForm, PrescriptionForm } from './ClinicalForms';
+import { RecordForm } from './ClinicalForms';
+import { PrescriptionComposer } from '@/components/clinic/PrescriptionComposer';
+import { PrescriptionList } from '@/components/clinic/PrescriptionList';
 import { useGet, useAction } from '@/hooks/queries';
 import { api, patch, post, openFile } from '@/lib/api';
 import { useAuth } from '@/store/auth';
 import { fmtDate, fmtTime, fmtDateTime, ageOf, inr, todayIST, addDays } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 const EDIT_FIELDS = [
   { name: 'name', label: 'Name', required: true },
@@ -68,7 +71,7 @@ export default function PatientDetail() {
   const addFu = useAction(() => post('/clinical/followups', { patient: id, branch: branchId || data.patient.registeredBranch?._id, dueDate: fuDate, reason: fuReason || undefined }), { success: 'Follow-up added', invalidate: ['timeline'], onSuccess: () => setDlg(null) });
 
   const docs = useGet(['docs', id], '/clinical/documents', { patient: id }, { enabled: !!data?.access?.medical });
-  const sendRx = useAction((rxId) => post(`/clinical/prescriptions/${rxId}/send`), { success: 'Prescription queued on WhatsApp' });
+  const qc = useQueryClient();
 
   if (isLoading || !data) return <div className="space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-80 w-full" /></div>;
   const { patient: p, appointments, records, prescriptions, followups, invoices, family, access } = data;
@@ -114,7 +117,7 @@ export default function PatientDetail() {
             </TabsList>
 
             <TabsContent value="visits">
-              <DataTable rows={appointments} onRowClick={(a) => nav(`/appointments?open=${a._id}`)} columns={[
+              <DataTable rows={appointments} onRowClick={(a) => nav(`/appointments/${a._id}`)} columns={[
                 { key: 'd', header: 'Date', cell: (a) => `${fmtDate(a.date)} ${fmtTime(a.start)}` },
                 { key: 'b', header: 'Branch', cell: (a) => a.branch?.code },
                 { key: 'doc', header: 'Doctor', cell: (a) => a.doctor?.name },
@@ -148,14 +151,7 @@ export default function PatientDetail() {
             {access.medical && (
               <TabsContent value="rx" className="space-y-3">
                 <Can perm="medical_records.create"><Button size="sm" onClick={() => setDlg('rx')}><Pill /> New prescription</Button></Can>
-                <DataTable rows={prescriptions} columns={[
-                  { key: 'no', header: 'Rx No', cell: (r) => <span className="font-mono text-xs">{r.rxNo}</span> },
-                  { key: 'd', header: 'Date', cell: (r) => fmtDate(r.createdAt) },
-                  { key: 'doc', header: 'Doctor', cell: (r) => r.doctor?.name },
-                  { key: 'dx', header: 'Diagnosis', cell: (r) => r.diagnosis || '—' },
-                  { key: 'n', header: 'Items', cell: (r) => r.items.length },
-                  { key: 'p', header: '', cell: (r) => <div className="flex gap-1"><Button size="sm" variant="ghost" onClick={() => openFile(`/clinical/prescriptions/${r._id}/pdf`)}><Printer /> Print</Button><Button size="sm" variant="ghost" loading={sendRx.isPending && sendRx.variables === r._id} onClick={() => sendRx.mutate(r._id)}><MessageCircle /> Send</Button></div> },
-                ]} />
+                <PrescriptionList items={prescriptions} />
               </TabsContent>
             )}
 
@@ -206,7 +202,7 @@ export default function PatientDetail() {
         <DialogContent title="New medical record" size="xl"><RecordForm patient={p} branch={branchId || p.registeredBranch?._id} onDone={() => setDlg(null)} /></DialogContent>
       </Dialog>
       <Dialog open={dlg === 'rx'} onOpenChange={(o) => !o && setDlg(null)}>
-        <DialogContent title="New prescription" size="xl"><PrescriptionForm patient={p} branch={branchId || p.registeredBranch?._id} onDone={() => setDlg(null)} /></DialogContent>
+        <DialogContent title="New prescription" size="xl"><PrescriptionComposer patient={p} branch={branchId || p.registeredBranch?._id} onSaved={() => { setDlg(null); qc.invalidateQueries({ queryKey: ['timeline'] }); }} /></DialogContent>
       </Dialog>
       <Dialog open={dlg === 'upload'} onOpenChange={(o) => !o && setDlg(null)}>
         <DialogContent title="Upload document" size="sm">

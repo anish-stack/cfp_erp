@@ -16,6 +16,8 @@ const schema = new mongoose.Schema(
     consultationFee: { type: Number, default: 0, min: 0 },
     followUpFee: { type: Number, default: 0, min: 0 },
     acceptsOnlineBooking: { type: Boolean, default: true },
+    // scanned signature printed on prescriptions (private file: uploads/signatures)
+    signature: { storedName: String, mime: String, updatedAt: Date },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

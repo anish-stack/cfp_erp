@@ -4,7 +4,7 @@ import { notificationsQueue } from './queues.js';
 import { sendWapp, normalizeMobile } from '../services/wapp.js';
 import { sendSmsFlow, sendEmail, deliverWebhook } from '../services/channels.js';
 import { M } from '../services/messages.js';
-import { signDocLink } from '../utils/signedLink.js';
+import { sendWappWithDoc } from '../services/wappDoc.js';
 import { getSettings } from '../models/Settings.js';
 import { Appointment } from '../models/Appointment.js';
 import { Patient } from '../models/Patient.js';
@@ -16,6 +16,7 @@ import { Lead } from '../models/Crm.js';
 import { Webhook } from '../models/Misc.js';
 import { stockSummary, expiringBatches } from '../modules/inventory/stock.service.js';
 import { todayIST } from '../utils/time.js';
+import { cfg } from '../services/runtimeConfig.js';
 
 /** missing keys (older settings docs) default ON */
 const on = (s, key) => s.notifications?.whatsapp !== false && s.notifications?.[key] !== false;
@@ -92,7 +93,7 @@ export const handlers = {
     if (!force && !on(s, 'prescription')) return;
     const rx = await Prescription.findById(rxId).populate('patient', 'name mobile').populate('doctor', 'name').lean();
     if (!rx) return;
-    await sendWapp({ to: rx.patient.mobile, msg: M.prescription({ rx }, ctxOf(s)), pdf: signDocLink('rx', rx._id), event: 'prescription.send', refType: 'Prescription', refId: rx._id });
+    await sendWappWithDoc({ to: rx.patient.mobile, msg: M.prescription({ rx }, ctxOf(s)), docType: 'rx', docId: rx._id, docName: `Prescription-${rx.rxNo}`, event: 'prescription.send', refType: 'Prescription', refId: rx._id });
   },
 
   'invoice.send': async ({ invoiceId, force }) => {
@@ -102,7 +103,7 @@ export const handlers = {
     if (!inv || inv.status === 'cancelled') return;
     const to = inv.patient?.mobile || normalizeMobile(inv.customer?.phone);
     if (!to) return;
-    await sendWapp({ to, msg: M.invoice({ inv }, ctxOf(s)), pdf: signDocLink('invoice', inv._id), event: 'invoice.send', refType: 'Invoice', refId: inv._id });
+    await sendWappWithDoc({ to, msg: M.invoice({ inv }, ctxOf(s)), docType: 'invoice', docId: inv._id, docName: `Invoice-${inv.invoiceNo}`, event: 'invoice.send', refType: 'Invoice', refId: inv._id });
   },
 
   /** invoice created → webhook + invoice PDF to customer */
@@ -124,7 +125,7 @@ export const handlers = {
     const s = await getSettings();
     const to = inv.patient?.mobile || normalizeMobile(inv.customer?.phone);
     if (!payment || !to || !on(s, 'paymentReceipt')) return;
-    await sendWapp({ to, msg: M.payment({ inv, payment }, ctxOf(s)), pdf: inv.balance <= 0 ? signDocLink('invoice', inv._id) : undefined, event: 'payment.received', refType: 'Payment', refId: payment._id });
+    await sendWappWithDoc({ to, msg: M.payment({ inv, payment }, ctxOf(s)), docType: 'receipt', docId: payment._id, docName: `Receipt-${payment.receiptNo}`, event: 'payment.received', refType: 'Payment', refId: payment._id });
   },
 
   'invoice.refund': async ({ invoiceId, creditNoteId, refunded }) => {
@@ -209,7 +210,7 @@ export const handlers = {
     const s = await getSettings();
     if (s.notifications?.dailyStockAlerts === false) return;
     const branches = await Branch.find({ isActive: true }).lean();
-    const global = env.ALERT_EMAILS.split(',').map((x) => x.trim()).filter(Boolean);
+    const global = cfg.ALERT_EMAILS.split(',').map((x) => x.trim()).filter(Boolean);
     for (const b of branches) {
       const [low, exp] = await Promise.all([stockSummary({ branch: b._id }, { lowOnly: true }), expiringBatches({ branch: b._id }, s.inventory?.expiryAlertDays || 90)]);
       if (!low.length && !exp.length) continue;

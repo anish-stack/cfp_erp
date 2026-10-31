@@ -11,6 +11,11 @@ import { objectId, time } from '../../utils/zod.js';
 import { Doctor } from '../../models/Doctor.js';
 import { DoctorSchedule } from '../../models/DoctorSchedule.js';
 import { User } from '../../models/User.js';
+import fs from 'node:fs';
+import { privateUpload, safeJoin } from '../../middleware/upload.js';
+import { hasPerm } from '../../middleware/permit.js';
+
+const sigUpload = privateUpload('signatures');
 
 const body = z.object({
   name: z.string().trim().min(2).max(80),
@@ -82,6 +87,16 @@ r.post('/', permit('doctors.create'), validate({ body }), asyncHandler(async (re
   req.body.branches.forEach((b) => req.assertBranch(b));
   const d = await Doctor.create(req.body);
   if (req.body.user) await linkUser(d._id, req.body.user);
+  // single-branch doctor → bookable immediately with the branch's opening hours (edit later)
+  if (d.branches.length === 1) {
+    const { Branch } = await import('../../models/Branch.js');
+    const b = await Branch.findById(d.branches[0]).lean();
+    const off = b?.settings?.weeklyOff || [];
+    const ops = [0, 1, 2, 3, 4, 5, 6].filter((w) => !off.includes(w)).map((weekday) => ({
+      updateOne: { filter: { doctor: d._id, branch: b._id, weekday }, update: { $set: { sessions: [{ start: b.settings?.openTime || '10:00', end: b.settings?.closeTime || '19:00' }], capacityPerSlot: 1, isActive: true } }, upsert: true },
+    }));
+    if (ops.length) await DoctorSchedule.bulkWrite(ops);
+  }
   audit(req, { action: 'doctors.create', entity: 'Doctor', entityId: d._id, after: d });
   ok(res, d, 201);
 }));
@@ -97,6 +112,40 @@ r.patch('/:id', permit('doctors.edit'), validate({ params: idParam, body: body.p
   if (req.body.user !== undefined) await linkUser(d._id, req.body.user);
   audit(req, { action: 'doctors.edit', entity: 'Doctor', entityId: d._id, before, after: d });
   ok(res, d);
+}));
+
+// ---------- signature (printed on prescriptions) — admins with doctors.edit, or the doctor themself
+const canEditSig = (req, id) => hasPerm(req, 'doctors.edit') || String(req.user.doctor || '') === String(id);
+r.get('/:id/signature', validate({ params: idParam }), asyncHandler(async (req, res) => {
+  const d = await Doctor.findById(req.params.id).select('signature branches').lean();
+  if (!d?.signature?.storedName) throw ApiError.notFound('No signature');
+  const p = safeJoin('signatures', d.signature.storedName);
+  if (!fs.existsSync(p)) throw ApiError.notFound('No signature');
+  res.setHeader('Content-Type', d.signature.mime || 'image/png');
+  res.setHeader('Cache-Control', 'private, no-store');
+  fs.createReadStream(p).pipe(res);
+}));
+r.post('/:id/signature', validate({ params: idParam }), (req, res, next) => (canEditSig(req, req.params.id) ? next() : next(ApiError.forbidden())), sigUpload.single('file'), asyncHandler(async (req, res) => {
+  if (!req.file) throw ApiError.badRequest('Upload a PNG or JPG image');
+  if (!/^image\/(png|jpeg)$/.test(req.file.mimetype)) { fs.unlink(req.file.path, () => {}); throw ApiError.badRequest('Signature must be PNG or JPG'); }
+  const d = await Doctor.findById(req.params.id);
+  if (!d) { fs.unlink(req.file.path, () => {}); throw ApiError.notFound('Doctor not found'); }
+  const old = d.signature?.storedName;
+  d.signature = { storedName: req.file.filename, mime: req.file.mimetype, updatedAt: new Date() };
+  await d.save();
+  if (old) fs.unlink(safeJoin('signatures', old), () => {});
+  audit(req, { action: 'doctors.signature_upload', entity: 'Doctor', entityId: d._id });
+  ok(res, { signature: d.signature });
+}));
+r.delete('/:id/signature', validate({ params: idParam }), asyncHandler(async (req, res) => {
+  if (!canEditSig(req, req.params.id)) throw ApiError.forbidden();
+  const d = await Doctor.findById(req.params.id);
+  if (!d) throw ApiError.notFound('Doctor not found');
+  if (d.signature?.storedName) fs.unlink(safeJoin('signatures', d.signature.storedName), () => {});
+  d.signature = undefined;
+  await d.save();
+  audit(req, { action: 'doctors.signature_remove', entity: 'Doctor', entityId: d._id });
+  ok(res, { removed: true });
 }));
 
 // weekly schedule

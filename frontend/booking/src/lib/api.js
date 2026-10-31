@@ -19,3 +19,16 @@ api.interceptors.response.use(
 export const get = (url, params) => api.get(url, { params }).then((r) => r.data.data);
 export const post = (url, body) => api.post(url, body).then((r) => r.data.data);
 export const patch = (url, body) => api.patch(url, body).then((r) => r.data.data);
+
+/** download / open an authenticated PDF */
+export async function openDoc(type, id, { download, filename } = {}) {
+  const r = await api.get(`/portal/documents/${type}/${id}`, { responseType: 'blob', params: download ? { download: 1 } : undefined });
+  const url = URL.createObjectURL(r.data);
+  if (download) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || `${type}.pdf`;
+    a.click();
+  } else window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}

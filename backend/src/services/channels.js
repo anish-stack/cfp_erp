@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { NotificationLog } from '../models/Misc.js';
+import { cfg, onConfigChange } from './runtimeConfig.js';
 
 const log = (entry) => NotificationLog.create(entry).catch((e) => logger.error({ err: e.message }, 'notif log failed'));
 
@@ -30,11 +31,15 @@ export async function sendSmsFlow({ to, flowId, vars = {}, ref = {} }) {
 
 // ---------- Email (SMTP) ----------
 let transporter;
+onConfigChange(() => { transporter = null; });
 const mailer = () => {
-  if (!env.SMTP_HOST) return null;
-  transporter ||= nodemailer.createTransport({ host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_PORT === 465, auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined });
+  if (!cfg.SMTP_HOST) return null;
+  transporter ||= nodemailer.createTransport({ host: cfg.SMTP_HOST, port: cfg.SMTP_PORT, secure: cfg.SMTP_PORT === 465, auth: cfg.SMTP_USER ? { user: cfg.SMTP_USER, pass: cfg.SMTP_PASS } : undefined });
   return transporter;
 };
+
+export const resetMailer = () => { transporter = null; };
+export const getMailer = () => mailer();
 
 export async function sendEmail({ to, subject, html, ref = {} }) {
   const t = mailer();
@@ -44,7 +49,7 @@ export async function sendEmail({ to, subject, html, ref = {} }) {
     return { skipped: true };
   }
   try {
-    const info = await t.sendMail({ from: env.SMTP_FROM || env.SMTP_USER, to: list.join(','), subject, html });
+    const info = await t.sendMail({ from: cfg.SMTP_FROM?.includes('<') ? cfg.SMTP_FROM : `"${cfg.APP_NAME}" <${cfg.SMTP_FROM || cfg.SMTP_USER}>`, to: list.join(','), subject, html });
     await log({ channel: 'email', to: list.join(','), template: subject, status: 'sent', providerId: info.messageId, ...ref });
     return info;
   } catch (e) {

@@ -20,21 +20,23 @@ const lineTotal = (l) => r2(l.qty * l.rate * (1 - (l.discountPct || 0) / 100));
 
 export function ProductSearch({ onPick, types, autoFocus, branch }) {
   const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
   const dq = useDebounce(q.trim(), 200);
   const ref = useRef();
-  const { data = [], isFetching } = useQuery({ queryKey: ['psearch', dq, types, branch], enabled: dq.length >= 1, queryFn: () => get('/inventory/products/search', { q: dq, type: types, branch: branch || undefined }) });
+  const { data = [], isFetching } = useQuery({ queryKey: ['psearch', dq, types, branch], enabled: open, queryFn: () => get('/inventory/products/search', { q: dq, type: types, branch: branch || undefined }), staleTime: 15_000 });
   const pick = (p) => { onPick(p); setQ(''); ref.current?.focus(); };
   return (
     <div className="relative">
       <ScanBarcode className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-      <Input ref={ref} autoFocus={autoFocus} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Scan barcode / search product or service"
-        className="pl-8" onKeyDown={(e) => { if (e.key === 'Enter' && data.length) { e.preventDefault(); pick(data[0]); } }} />
-      {dq && (
+      <Input ref={ref} autoFocus={autoFocus} value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} placeholder="Scan barcode / search medicine, generic or service (click to browse)"
+        className="pl-8" onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && data.length) { e.preventDefault(); pick(data[0]); } if (e.key === 'Escape') setOpen(false); }} />
+      {open && (
         <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border bg-popover shadow-lg scrollbar-thin">
           {isFetching && !data.length && <p className="p-3 text-sm text-muted-foreground">Searching…</p>}
-          {!isFetching && !data.length && <p className="p-3 text-sm text-muted-foreground">No match</p>}
+          {!isFetching && !data.length && <p className="p-3 text-sm text-muted-foreground">{dq ? `No product matches "${dq}"` : 'No products yet — add them in Products'}</p>}
           {data.map((p) => (
-            <button key={p._id} type="button" onClick={() => pick(p)} className="flex w-full items-center justify-between border-b px-3 py-2 text-left text-sm last:border-0 hover:bg-muted">
+            <button key={p._id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pick(p)} className="flex w-full items-center justify-between border-b px-3 py-2 text-left text-sm last:border-0 hover:bg-muted">
               <div><p className="font-medium">{p.name}</p><p className="text-xs text-muted-foreground">{p.sku}{p.genericName ? ` · ${p.genericName}` : ''}</p></div>
               <div className="text-right"><p>{inr(p.sellPrice)}</p>{p.stock !== null && <p className={cn('text-xs', p.stock > 0 ? 'text-emerald-600' : 'text-red-600')}>{p.stock} in stock</p>}</div>
             </button>

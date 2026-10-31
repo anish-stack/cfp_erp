@@ -12,14 +12,13 @@ import { audit } from '../../utils/audit.js';
 import { objectId, ymd, paging } from '../../utils/zod.js';
 import { nextDocNo } from '../../utils/counter.js';
 import { todayIST } from '../../utils/time.js';
-import { MedicalRecord, Prescription, FollowUp, PatientDocument } from '../../models/Clinical.js';
+import { MedicalRecord, Prescription, FollowUp, PatientDocument, PrescriptionTemplate } from '../../models/Clinical.js';
 import { Appointment } from '../../models/Appointment.js';
 import { Branch } from '../../models/Branch.js';
 import { Patient } from '../../models/Patient.js';
 import { getForStaff } from '../patients/patients.service.js';
-import { renderPrescriptionPdf } from '../../services/pdf.js';
 import { Invoice } from '../../models/Billing.js';
-import { pdfBranding } from '../../services/branding.js';
+import { loadDocument, streamDocument } from '../../services/documents.js';
 import * as notify from '../../services/notify.js';
 
 const r = Router();
@@ -46,23 +45,32 @@ const recordBody = z.object({
   investigations: z.array(z.object({ name: z.string().max(120), result: z.string().max(500).optional(), date: ymd.optional() })).max(30).optional(),
 });
 
+const rxItemSchema = z.object({
+  product: objectId.optional().nullable(), name: z.string().trim().min(1).max(160), dose: z.string().max(60).optional(),
+  frequency: z.string().max(40).optional(), timing: z.string().max(60).optional(), duration: z.string().max(40).optional(),
+  qty: z.number().min(0).optional(), notes: z.string().max(200).optional(),
+});
+const vitalsSchema = z.object({ bp: z.string().max(10).optional(), pulse: z.number().optional(), temp: z.number().optional(), weightKg: z.number().optional(), spo2: z.number().optional() }).partial();
 const rxBody = z.object({
   patient: objectId,
   branch: objectId,
   doctor: objectId.optional(),
   appointment: objectId.optional(),
   record: objectId.optional(),
+  mode: z.enum(['typed', 'image', 'both']).default('typed'),
+  template: objectId.optional(),
+  complaints: z.string().max(2000).optional(),
   diagnosis: z.string().max(1000).optional(),
-  items: z.array(z.object({
-    product: objectId.optional(), name: z.string().min(1).max(160), dose: z.string().max(60).optional(),
-    frequency: z.string().max(40).optional(), timing: z.string().max(60).optional(), duration: z.string().max(40).optional(),
-    qty: z.number().min(0).optional(), notes: z.string().max(200).optional(),
-  })).max(40),
+  vitals: vitalsSchema.optional(),
+  items: z.array(rxItemSchema).max(40).default([]),
+  investigations: z.string().max(2000).optional(),
   advice: z.string().max(3000).optional(),
   diet: z.string().max(2000).optional(),
+  notes: z.string().max(2000).optional(),
   followUpDate: ymd.optional(),
   sendWhatsApp: z.boolean().optional(),
-});
+}).refine((d) => d.mode !== 'typed' || d.items.length || d.diagnosis || d.advice, 'Add at least one medicine, diagnosis or advice');
+
 
 /** patient must be visible to staff + target branch within scope */
 async function guard(req, patientId, branchId) {
@@ -74,9 +82,9 @@ async function guard(req, patientId, branchId) {
 const doctorOf = (req, explicit) => explicit || (req.user.doctor ? String(req.user.doctor) : undefined);
 
 // ---------- medical records ----------
-r.get('/records', permit('medical_records.view'), validate({ query: z.object({ patient: objectId }) }), asyncHandler(async (req, res) => {
+r.get('/records', permit('medical_records.view'), validate({ query: z.object({ patient: objectId, appointment: objectId.optional() }) }), asyncHandler(async (req, res) => {
   await guard(req, req.query.patient);
-  const items = await MedicalRecord.find({ patient: req.query.patient })
+  const items = await MedicalRecord.find({ patient: req.query.patient, ...(req.query.appointment ? { appointment: req.query.appointment } : {}) })
     .populate('doctor', 'name').populate('branch', 'name code').populate('createdBy', 'name').sort({ createdAt: -1 }).lean();
   audit(req, { action: 'medical_records.view', entity: 'Patient', entityId: req.query.patient });
   ok(res, items);
@@ -105,9 +113,9 @@ r.patch('/records/:id', permit('medical_records.edit'), validate({ params: idPar
 }));
 
 // ---------- prescriptions ----------
-r.get('/prescriptions', permit('medical_records.view'), validate({ query: z.object({ patient: objectId }) }), asyncHandler(async (req, res) => {
+r.get('/prescriptions', permit('medical_records.view'), validate({ query: z.object({ patient: objectId, appointment: objectId.optional() }) }), asyncHandler(async (req, res) => {
   await guard(req, req.query.patient);
-  ok(res, await Prescription.find({ patient: req.query.patient }).populate('doctor', 'name').populate('branch', 'name code').sort({ createdAt: -1 }).lean());
+  ok(res, await Prescription.find({ patient: req.query.patient, ...(req.query.appointment ? { appointment: req.query.appointment } : {}) }).populate('doctor', 'name').populate('branch', 'name code').sort({ createdAt: -1 }).lean());
 }));
 
 r.post('/prescriptions', permit('medical_records.create'), validate({ body: rxBody }), asyncHandler(async (req, res) => {
@@ -117,12 +125,15 @@ r.post('/prescriptions', permit('medical_records.create'), validate({ body: rxBo
   const branch = await Branch.findById(req.body.branch).select('code').lean();
   const rxNo = await nextDocNo('RX', branch.code);
   const { sendWhatsApp, ...rxData } = req.body; // eslint-disable-line no-unused-vars
+  if (rxData.template) rxData.templateName = (await PrescriptionTemplate.findById(rxData.template).select('name').lean())?.name;
   const rx = await Prescription.create({ ...rxData, doctor, rxNo, createdBy: req.user._id });
+  if (rx.appointment) await Appointment.updateOne({ _id: rx.appointment, status: 'checked_in' }, { status: 'in_consultation' });
   if (req.body.followUpDate) {
     await FollowUp.create({ patient: rx.patient, branch: rx.branch, doctor, sourceAppointment: rx.appointment, dueDate: req.body.followUpDate, reason: 'Doctor advised follow-up', createdBy: req.user._id });
   }
   audit(req, { action: 'medical_records.create', entity: 'Prescription', entityId: rx._id, branch: rx.branch, after: rx });
-  if (req.body.sendWhatsApp !== false) notify.enqueue('prescription.send', { rxId: String(rx._id) });
+  // image prescriptions are sent after the images are uploaded (POST /prescriptions/:id/images?send=1)
+  if (req.body.sendWhatsApp !== false && rx.mode === 'typed') notify.enqueue('prescription.send', { rxId: String(rx._id) });
   ok(res, rx, 201);
 }));
 
@@ -137,14 +148,96 @@ r.post('/prescriptions/:id/send', permit('medical_records.view'), validate({ par
 }));
 
 r.get('/prescriptions/:id/pdf', permit('medical_records.view'), validate({ params: idParam }), asyncHandler(async (req, res) => {
-  const rx = await Prescription.findById(req.params.id).populate('patient').populate('doctor').populate('branch');
+  const loaded = await loadDocument('rx', req.params.id);
+  await guard(req, loaded.patient);
+  audit(req, { action: 'medical_records.export', entity: 'Prescription', entityId: loaded.doc._id, branch: loaded.branch });
+  return streamDocument(res, 'rx', loaded, { download: req.query.download === '1' });
+}));
+
+/** edit within 24h (author or approver) */
+r.patch('/prescriptions/:id', permit('medical_records.edit'), validate({ params: idParam, body: z.object({
+  complaints: z.string().max(2000).optional(), diagnosis: z.string().max(1000).optional(), vitals: vitalsSchema.optional(), items: z.array(rxItemSchema).max(40).optional(),
+  investigations: z.string().max(2000).optional(), advice: z.string().max(3000).optional(), diet: z.string().max(2000).optional(), notes: z.string().max(2000).optional(), followUpDate: ymd.optional().nullable(),
+}) }), asyncHandler(async (req, res) => {
+  const rx = await Prescription.findById(req.params.id);
   if (!rx) throw ApiError.notFound();
-  await guard(req, rx.patient._id);
-  audit(req, { action: 'medical_records.export', entity: 'Prescription', entityId: rx._id, branch: rx.branch._id });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${rx.rxNo.replace(/\//g, '-')}.pdf"`);
-  const b = await pdfBranding();
-  renderPrescriptionPdf(rx, res, b.clinic, b.logo);
+  await guard(req, rx.patient, rx.branch);
+  if ((Date.now() - rx.createdAt.getTime()) / 3600_000 > LOCK_HOURS && !req.isSuperAdmin) throw ApiError.forbidden(`Prescriptions lock ${LOCK_HOURS}h after creation`);
+  if (String(rx.createdBy) !== String(req.user._id) && !hasPerm(req, 'medical_records.approve')) throw ApiError.forbidden('Only the author can edit');
+  const before = rx.toObject();
+  Object.assign(rx, req.body);
+  await rx.save();
+  audit(req, { action: 'medical_records.edit', entity: 'Prescription', entityId: rx._id, branch: rx.branch, before, after: rx });
+  ok(res, rx);
+}));
+
+/** attach photos / scans of a handwritten prescription (PNG/JPG, max 5) */
+const rxImageUpload = privateUpload('rx');
+r.post('/prescriptions/:id/images', permit('medical_records.create'), validate({ params: idParam }), rxImageUpload.array('files', 5), asyncHandler(async (req, res) => {
+  const files = req.files || [];
+  const cleanup = () => files.forEach((f) => fs.unlink(f.path, () => {}));
+  const rx = await Prescription.findById(req.params.id);
+  if (!rx) { cleanup(); throw ApiError.notFound(); }
+  try { await guard(req, rx.patient, rx.branch); } catch (e) { cleanup(); throw e; }
+  const bad = files.filter((f) => !/image\/(png|jpe?g)/.test(f.mimetype));
+  if (!files.length || bad.length) { cleanup(); throw ApiError.badRequest('Upload 1-5 PNG or JPG images'); }
+  if (rx.images.length + files.length > 8) { cleanup(); throw ApiError.badRequest('Max 8 images per prescription'); }
+  rx.images.push(...files.map((f) => ({ storedName: f.filename, originalName: f.originalname, mime: f.mimetype, size: f.size })));
+  if (rx.mode === 'typed') rx.mode = 'both';
+  await rx.save();
+  audit(req, { action: 'medical_records.create', entity: 'Prescription', entityId: rx._id, branch: rx.branch, meta: { images: files.length } });
+  if (req.query.send === '1') notify.enqueue('prescription.send', { rxId: String(rx._id) });
+  ok(res, rx, 201);
+}));
+
+r.get('/prescriptions/:id/images/:idx', permit('medical_records.view'), validate({ params: z.object({ id: objectId, idx: z.coerce.number().int().min(0).max(20) }) }), asyncHandler(async (req, res) => {
+  const rx = await Prescription.findById(req.params.id).select('patient images').lean();
+  if (!rx) throw ApiError.notFound();
+  await guard(req, rx.patient);
+  const img = rx.images?.[req.params.idx];
+  if (!img) throw ApiError.notFound();
+  const p = safeJoin('rx', img.storedName);
+  if (!fs.existsSync(p)) throw ApiError.notFound('File missing');
+  res.setHeader('Content-Type', img.mime);
+  res.setHeader('Cache-Control', 'private, max-age=600');
+  fs.createReadStream(p).pipe(res);
+}));
+
+r.delete('/prescriptions/:id/images/:idx', permit('medical_records.edit'), validate({ params: z.object({ id: objectId, idx: z.coerce.number().int().min(0).max(20) }) }), asyncHandler(async (req, res) => {
+  const rx = await Prescription.findById(req.params.id);
+  if (!rx) throw ApiError.notFound();
+  await guard(req, rx.patient, rx.branch);
+  const [img] = rx.images.splice(req.params.idx, 1);
+  if (!img) throw ApiError.notFound();
+  await rx.save();
+  fs.unlink(safeJoin('rx', img.storedName), () => {});
+  ok(res, rx);
+}));
+
+// ---------- prescription types (templates) ----------
+const tplBody = z.object({
+  name: z.string().trim().min(2).max(100), condition: z.string().max(60).optional(), diagnosis: z.string().max(1000).optional(), complaints: z.string().max(2000).optional(),
+  items: z.array(rxItemSchema).max(40).default([]), investigations: z.string().max(2000).optional(), advice: z.string().max(3000).optional(), diet: z.string().max(2000).optional(),
+  followUpDays: z.number().int().min(0).max(365).optional().nullable(), doctor: objectId.optional().nullable(), isActive: z.boolean().optional(),
+});
+r.get('/rx-templates', permit('medical_records.view'), asyncHandler(async (req, res) => {
+  const f = req.query.all === 'true' ? {} : { isActive: true };
+  if (req.query.doctor) f.$or = [{ doctor: null }, { doctor: req.query.doctor }];
+  ok(res, await PrescriptionTemplate.find(f).populate('doctor', 'name').sort({ condition: 1, name: 1 }).lean());
+}));
+r.post('/rx-templates', permit('medical_records.create'), validate({ body: tplBody }), asyncHandler(async (req, res) => {
+  const t = await PrescriptionTemplate.create({ ...req.body, createdBy: req.user._id });
+  audit(req, { action: 'medical_records.template_create', entity: 'PrescriptionTemplate', entityId: t._id, after: t });
+  ok(res, t, 201);
+}));
+r.patch('/rx-templates/:id', permit('medical_records.edit'), validate({ params: idParam, body: tplBody.partial() }), asyncHandler(async (req, res) => {
+  const t = await PrescriptionTemplate.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  if (!t) throw ApiError.notFound();
+  ok(res, t);
+}));
+r.delete('/rx-templates/:id', permit('medical_records.delete'), validate({ params: idParam }), asyncHandler(async (req, res) => {
+  await PrescriptionTemplate.updateOne({ _id: req.params.id }, { isActive: false });
+  ok(res, { deleted: true });
 }));
 
 // ---------- follow-ups ----------

@@ -88,11 +88,11 @@ export function AppShell() {
   const nav = useNavigate();
   return (
     <div className="flex h-screen overflow-hidden">
-      <aside className="hidden w-60 shrink-0 border-r bg-card lg:block"><Sidebar /></aside>
+      <aside className="hidden w-60 shrink-0 border-r bg-sidebar lg:block"><Sidebar /></aside>
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 bg-card shadow-xl">
+          <aside className="absolute inset-y-0 left-0 w-64 bg-sidebar shadow-xl">
             <button className="absolute right-3 top-4" onClick={() => setOpen(false)}><X className="h-4 w-4" /></button>
             <Sidebar onNavigate={() => setOpen(false)} />
           </aside>

@@ -16,7 +16,9 @@ import { useGet, useAction, useStages } from '@/hooks/queries';
 import { patch, post, del, api, API_URL } from '@/lib/api';
 import { useCallConfig } from '@/components/clinic/Calling';
 import { useBranches } from '@/hooks/queries';
+import { applyTheme, PRESETS } from '@/lib/theme';
 import { useCan } from '@/store/auth';
+import { IntegrationSettings } from '@/components/admin/IntegrationSettings';
 import { fmtDateTime } from '@/lib/utils';
 
 function Toggle({ label, hint, checked, onChange, disabled }) {
@@ -67,6 +69,76 @@ function Webhooks() {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+function ColorInput({ label, value, onChange, disabled, hint }) {
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-center gap-2">
+        <input type="color" value={value || '#e21f26'} disabled={disabled} onChange={(e) => onChange(e.target.value)} className="h-9 w-12 cursor-pointer rounded border bg-card p-0.5" />
+        <Input className="w-28 font-mono" value={value || ''} disabled={disabled} onChange={(e) => onChange(e.target.value)} placeholder="#137a6f" />
+      </div>
+    </Field>
+  );
+}
+
+function Appearance({ s, setS, editable, saving, onSave }) {
+  const t = s.theme || {};
+  const c = t.console || {};
+  const b = t.booking || {};
+  const setT = (path, v) => setS((x) => {
+    const n = structuredClone(x);
+    n.theme ||= {};
+    const [a, k] = path.split('.');
+    if (k) { n.theme[a] ||= {}; n.theme[a][k] = v; } else n.theme[a] = v;
+    if (a === 'console') applyTheme({ ...n.theme.console }); // live preview in this console
+    return n;
+  });
+  const valid = (v) => !v || /^#[0-9a-f]{6}$/i.test(v);
+  const ok = [c.primary, c.sidebar, b.primary, b.background, t.pdf].every(valid);
+  return (
+    <div className="space-y-4">
+      <Card className="space-y-4 p-4">
+        <div><p className="font-semibold">Console (admin / clinic / CRM)</p><p className="text-xs text-muted-foreground">Changes preview live here; other users see them after refresh.</p></div>
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map((p) => (
+            <button key={p.primary} type="button" disabled={!editable} onClick={() => setT('console.primary', p.primary)} className="flex items-center gap-2 rounded-full border px-3 py-1 text-xs hover:border-primary">
+              <span className="h-4 w-4 rounded-full" style={{ background: p.primary }} />{p.name}
+            </button>
+          ))}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ColorInput label="Primary colour" value={c.primary} disabled={!editable} onChange={(v) => setT('console.primary', v)} />
+          <ColorInput label="Sidebar background" value={c.sidebar} disabled={!editable} onChange={(v) => setT('console.sidebar', v)} />
+          <Field label={`Corner radius (${c.radius ?? 10}px)`}><input type="range" min="0" max="20" value={c.radius ?? 10} disabled={!editable} onChange={(e) => setT('console.radius', Number(e.target.value))} className="w-full" /></Field>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3">
+          <Button size="sm">Primary button</Button><Button size="sm" variant="outline">Outline</Button><Badge>Badge</Badge><span className="rounded-md bg-accent px-2 py-1 text-xs text-accent-foreground">Active menu item</span>
+        </div>
+      </Card>
+      <Card className="space-y-4 p-4">
+        <div><p className="font-semibold">Booking portal (patients)</p><p className="text-xs text-muted-foreground">appointment.centreforpilesandfistula.com</p></div>
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map((p) => <button key={p.primary} type="button" disabled={!editable} onClick={() => setT('booking.primary', p.primary)} className="flex items-center gap-2 rounded-full border px-3 py-1 text-xs hover:border-primary"><span className="h-4 w-4 rounded-full" style={{ background: p.primary }} />{p.name}</button>)}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ColorInput label="Primary colour" value={b.primary} disabled={!editable} onChange={(v) => setT('booking.primary', v)} />
+          <ColorInput label="Page background tint" value={b.background} disabled={!editable} onChange={(v) => setT('booking.background', v)} />
+          <div className="flex items-end"><div className="w-full rounded-lg border p-3" style={{ background: `linear-gradient(${b.background || '#f0fdfa'}, #fff)` }}><div className="rounded-md py-2 text-center text-sm font-medium text-white" style={{ background: b.primary || '#137a6f' }}>Book appointment</div></div></div>
+        </div>
+      </Card>
+      <Card className="space-y-4 p-4">
+        <p className="font-semibold">PDFs (invoices, prescriptions, receipts, slips)</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ColorInput label="PDF accent colour" hint="Blank = console primary" value={t.pdf} disabled={!editable} onChange={(v) => setT('pdf', v)} />
+          <Field label="Prescription footer note" className="sm:col-span-2"><Input disabled={!editable} value={s.pdf?.rxFooter || ''} onChange={(e) => setS((x) => ({ ...x, pdf: { ...x.pdf, rxFooter: e.target.value } }))} /></Field>
+        </div>
+        <Toggle label="Doctor signature line on prescriptions" checked={s.pdf?.showSignature !== false} disabled={!editable} onChange={(v) => setS((x) => ({ ...x, pdf: { ...x.pdf, showSignature: v } }))} />
+        <Toggle label="Show clinic logo on PDFs" hint="Upload the logo under Clinic" checked={s.billing?.showLogoOnPdf !== false} disabled={!editable} onChange={(v) => setS((x) => ({ ...x, billing: { ...x.billing, showLogoOnPdf: v } }))} />
+      </Card>
+      {editable && <div className="flex justify-end"><Button disabled={!ok} loading={saving} onClick={onSave}>Save appearance</Button></div>}
+    </div>
   );
 }
 
@@ -141,7 +213,7 @@ function ExotelCard() {
       <div className="flex items-center gap-2 font-semibold"><PhoneCall className="h-4 w-4" /> Exotel dialer & IVR
         {cfg.enabled ? <Badge variant="success"><CheckCircle2 className="mr-1 h-3 w-3" />Connected</Badge> : <Badge variant="secondary"><XCircle className="mr-1 h-3 w-3" />Not configured</Badge>}
       </div>
-      {!cfg.enabled && <p className="text-muted-foreground">Set <code>EXOTEL_SID</code>, <code>EXOTEL_API_KEY</code>, <code>EXOTEL_API_TOKEN</code>, <code>EXOTEL_SUBDOMAIN</code>, <code>EXOTEL_CALLER_ID</code> and <code>EXOTEL_WEBHOOK_TOKEN</code> in the API <code>.env</code>, then restart. Until then the console dials from the user's device.</p>}
+      {!cfg.enabled && <p className="text-muted-foreground">Fill the Exotel keys above (SID, API key, API token, region, Caller ID, webhook token) and save. Until then the console dials from the user's device.</p>}
       {cfg.callerId && <p>ExoPhone (caller ID): <b>{cfg.callerId}</b></p>}
       {cfg.webhooks && (
         <div className="space-y-2">
@@ -189,6 +261,14 @@ export default function SettingsPage() {
   const [s, setS] = useState(null);
   useEffect(() => { if (data) setS(structuredClone(data)); }, [data]);
   const save = useAction((section) => patch('/admin/settings', { [section]: s[section] }), { success: 'Settings saved', invalidate: ['/admin/settings'] });
+  const appearance = useAction(() => {
+    const clean = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== '' && v !== undefined && v !== null));
+    return patch('/admin/settings', {
+      theme: { console: clean(s.theme?.console), booking: clean(s.theme?.booking), pdf: s.theme?.pdf || '' },
+      pdf: { rxFooter: s.pdf?.rxFooter || '', showSignature: s.pdf?.showSignature !== false },
+      billing: { showLogoOnPdf: s.billing?.showLogoOnPdf !== false },
+    });
+  }, { success: 'Appearance saved', invalidate: ['/admin/settings', 'public-clinic'] });
   const editable = can('settings.manage_settings');
   if (isLoading || !s) return <Skeleton className="h-96 w-full" />;
   const set = (sec, k, v) => setS((x) => ({ ...x, [sec]: { ...x[sec], [k]: v } }));
@@ -198,7 +278,7 @@ export default function SettingsPage() {
     <div className="max-w-5xl">
       <PageHeader title="Settings" />
       <Tabs defaultValue="clinic">
-        <TabsList><TabsTrigger value="clinic">Clinic</TabsTrigger><TabsTrigger value="billing">Billing & GST</TabsTrigger><TabsTrigger value="notifications">Notifications</TabsTrigger><TabsTrigger value="crm">CRM</TabsTrigger><TabsTrigger value="integrations">Integrations</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="clinic">Clinic</TabsTrigger><TabsTrigger value="appearance">Appearance</TabsTrigger><TabsTrigger value="billing">Billing & GST</TabsTrigger><TabsTrigger value="notifications">Notifications</TabsTrigger><TabsTrigger value="crm">CRM</TabsTrigger><TabsTrigger value="integrations">Integrations</TabsTrigger></TabsList>
         <TabsContent value="clinic">
           <Card className="p-4">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -208,6 +288,9 @@ export default function SettingsPage() {
             </div>
             <SaveBtn section="clinic" />
           </Card>
+        </TabsContent>
+        <TabsContent value="appearance">
+          <Appearance s={s} setS={setS} editable={editable} saving={appearance.isPending} onSave={() => appearance.mutate()} />
         </TabsContent>
         <TabsContent value="billing">
           <Card className="p-4">
@@ -254,6 +337,7 @@ export default function SettingsPage() {
           <Stages />
         </TabsContent>
         <TabsContent value="integrations" className="space-y-4">
+          <IntegrationSettings editable={editable} />
           <Card className="p-4 text-sm">
             <p className="font-semibold">Website lead API</p>
             <p className="mt-1 text-muted-foreground">POST <code>/api/v1/public/leads</code> with header <code>x-api-key: WEBSITE_API_KEY</code> (set in server .env). Body: <code>{'{ name, phone, email?, city?, condition?, message?, utm? }'}</code></p>

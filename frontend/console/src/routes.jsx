@@ -2,7 +2,7 @@ import { lazy } from 'react';
 import {
   LayoutDashboard, CalendarDays, Users, Stethoscope, CalendarClock, BellRing, Receipt, ShoppingCart, Wallet, Banknote,
   Package, Boxes, Truck, ArrowLeftRight, Building2, Target, ListTodo, Megaphone, FileText, BarChart3, UserCog, ShieldCheck,
-  ScrollText, Settings, Bell, Contact, Gauge, PhoneCall,
+  ScrollText, Settings, Bell, Contact, Gauge, PhoneCall, UserPlus, FileStack,
 } from 'lucide-react';
 
 const L = (f) => lazy(f);
@@ -13,9 +13,12 @@ export const ROUTES = [
   { path: '/crm', label: 'Sales Home', icon: Gauge, group: 'CRM', perm: 'leads.view', el: L(() => import('@/pages/crm/CrmHome')) },
 
   { path: '/appointments', label: 'Appointments', icon: CalendarDays, group: 'Clinical', perm: 'appointments.view', el: L(() => import('@/pages/appointments/Appointments')) },
+  { path: '/appointments/:id', group: 'Clinical', perm: 'appointments.view', el: L(() => import('@/pages/appointments/AppointmentPage')), hidden: true },
+  { path: '/walkin', label: 'Walk-in Registration', icon: UserPlus, group: 'Clinical', perm: 'walkins.create', el: L(() => import('@/pages/appointments/Walkin')) },
   { path: '/patients', label: 'Patients', icon: Users, group: 'Clinical', perm: 'patients.view', el: L(() => import('@/pages/patients/Patients')) },
   { path: '/patients/:id', group: 'Clinical', perm: 'patients.view', el: L(() => import('@/pages/patients/PatientDetail')), hidden: true },
   { path: '/followups', label: 'Follow-ups', icon: BellRing, group: 'Clinical', perm: 'followups.view', el: L(() => import('@/pages/clinical/FollowUps')) },
+  { path: '/rx-templates', label: 'Prescription Types', icon: FileStack, group: 'Clinical', perm: 'medical_records.view', el: L(() => import('@/pages/clinical/RxTemplates')) },
   { path: '/doctors', label: 'Doctors', icon: Stethoscope, group: 'Clinical', perm: 'doctors.view', el: L(() => import('@/pages/clinical/Doctors')) },
   { path: '/slots', label: 'Slots & Leave', icon: CalendarClock, group: 'Clinical', perm: 'slots.view', el: L(() => import('@/pages/clinical/Slots')) },
 
@@ -38,6 +41,7 @@ export const ROUTES = [
   { path: '/tasks', label: 'Tasks', icon: ListTodo, group: 'CRM', perm: 'tasks.view', el: L(() => import('@/pages/crm/Tasks')) },
   { path: '/campaigns', label: 'Campaigns', icon: Megaphone, group: 'CRM', perm: 'campaigns.view', el: L(() => import('@/pages/crm/Campaigns')) },
   { path: '/sales', label: 'Targets & Performance', icon: BarChart3, group: 'CRM', perm: 'sales.view', el: L(() => import('@/pages/crm/Sales')) },
+  { path: '/forms/:id/design', group: 'CRM', perm: 'cms.view', el: L(() => import('@/pages/crm/PageDesigner')), hidden: true },
   { path: '/forms', label: 'CMS & Forms', icon: FileText, group: 'CRM', perm: 'cms.view', el: L(() => import('@/pages/crm/Forms')) },
 
   { path: '/reports', label: 'Reports', icon: BarChart3, group: 'Insights', perm: 'reports.view', el: L(() => import('@/pages/Reports')) },

@@ -1,11 +1,15 @@
 import { BrowserRouter, Routes, Route, Link, NavLink, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { get } from '@/lib/api';
+import { useEffect } from 'react';
+import { applyTheme } from '@/lib/theme';
 import { Toaster } from 'sonner';
-import { CalendarCheck2, LogOut, Phone } from 'lucide-react';
+import { CalendarCheck2, LogOut, Phone, UserRound, LogIn } from 'lucide-react';
 import Book from '@/pages/Book';
 import MyAppointments from '@/pages/MyAppointments';
 import Landing from '@/pages/Landing';
+import Profile from '@/pages/Profile';
+import Login from '@/pages/Login';
 import { usePatient } from '@/store/patient';
 import { cn } from '@/lib/utils';
 
@@ -15,9 +19,13 @@ function Shell({ children }) {
   const { token, mobile, logout } = usePatient();
   const loc = useLocation();
   const landing = loc.pathname.startsWith('/f/');
-  const { data: clinic } = useQuery({ queryKey: ['clinic'], queryFn: () => get('/public/clinic').then((r) => r.clinic), staleTime: 600_000 });
+  const { data: info } = useQuery({ queryKey: ['clinic'], queryFn: () => get('/public/clinic'), staleTime: 600_000 });
+  const clinic = info?.clinic;
+  useEffect(() => { if (info?.theme?.booking) applyTheme(info.theme.booking); if (clinic?.name) document.title = `Book Appointment · ${clinic.name}`; }, [info]); // eslint-disable-line react-hooks/exhaustive-deps
+  // landing pages (/f/:slug) render their own full-width header/footer
+  if (landing) return <div className="min-h-screen bg-white">{children}</div>;
   return (
-    <div className="min-h-screen bg-gradient-to-b from-teal-50 to-background">
+    <div className="min-h-screen" style={{ background: 'linear-gradient(to bottom, hsl(var(--app-bg)), hsl(var(--background)))' }}>
       <header className="sticky top-0 z-10 border-b bg-card/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
           <Link to="/" className="flex items-center gap-2 font-semibold">
@@ -28,6 +36,8 @@ function Shell({ children }) {
             <nav className="flex items-center gap-1 text-sm">
               <NavLink to="/" end className={({ isActive }) => cn('rounded-md px-3 py-1.5', isActive ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground')}>Book</NavLink>
               {token && <NavLink to="/appointments" className={({ isActive }) => cn('flex items-center gap-1 rounded-md px-3 py-1.5', isActive ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground')}><CalendarCheck2 className="h-4 w-4" /> My visits</NavLink>}
+              {token && <NavLink to="/profile" className={({ isActive }) => cn('flex items-center gap-1 rounded-md px-3 py-1.5', isActive ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground')}><UserRound className="h-4 w-4" /> <span className="hidden sm:inline">Profile</span></NavLink>}
+              {!token && <NavLink to="/login" className={({ isActive }) => cn('flex items-center gap-1 rounded-md px-3 py-1.5', isActive ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground')}><LogIn className="h-4 w-4" /> Login</NavLink>}
               {token && <button onClick={logout} title={`Logout ${mobile}`} className="rounded-md p-2 text-muted-foreground hover:bg-accent"><LogOut className="h-4 w-4" /></button>}
             </nav>
           )}
@@ -50,6 +60,8 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Book />} />
             <Route path="/appointments" element={<MyAppointments />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/login" element={<Login />} />
             <Route path="/f/:slug" element={<Landing />} />
             <Route path="*" element={<Book />} />
           </Routes>

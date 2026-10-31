@@ -60,12 +60,16 @@ const productSchema = z.object({
 });
 
 /** product search for POS/billing — includes branch stock */
-r.get('/products/search', permit.any('pos.view', 'billing.view', 'inventory.view'), validate({ query: z.object({ q: z.string().trim().min(1).max(60), branch: objectId.optional(), type: z.string().optional() }) }), asyncHandler(async (req, res) => {
+r.get('/products/search', permit.any('pos.view', 'billing.view', 'inventory.view'), validate({ query: z.object({ q: z.string().trim().max(60).default(''), branch: objectId.optional(), type: z.string().optional(), inStock: z.enum(['true']).optional() }) }), asyncHandler(async (req, res) => {
   const q = req.query.q;
-  const rx = new RegExp(escapeRegex(q), 'i');
-  const f = { isActive: true, $or: [{ barcode: q }, { sku: q.toUpperCase() }, { name: rx }, { genericName: rx }] };
+  const f = { isActive: true };
+  if (q) {
+    // every word must match name / generic / sku ("arsh vati", "lido gel")
+    const words = q.split(/\s+/).filter(Boolean).slice(0, 5);
+    f.$or = [{ barcode: q }, { sku: q.toUpperCase() }, { $and: words.map((w) => { const rx = new RegExp(escapeRegex(w), 'i'); return { $or: [{ name: rx }, { genericName: rx }, { sku: rx }] }; }) }];
+  }
   if (req.query.type) f.type = { $in: req.query.type.split(',') };
-  const products = await Product.find(f).limit(20).lean();
+  const products = await Product.find(f).sort({ name: 1 }).limit(q ? 25 : 60).lean();
   const branch = req.activeBranch;
   let stockMap = new Map();
   if (branch && products.length) {

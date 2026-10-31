@@ -13,6 +13,8 @@ const schema = z.object({
   REDIS_URL: z.string().default('redis://127.0.0.1:6379'),
   JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET min 32 chars'),
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET min 32 chars'),
+  // encrypts integration secrets saved from Admin → Settings (falls back to JWT_REFRESH_SECRET). Never change after saving secrets.
+  CONFIG_SECRET: z.string().optional().default(''),
   JWT_PATIENT_SECRET: z.string().min(32, 'JWT_PATIENT_SECRET min 32 chars'),
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('7d'),
@@ -29,6 +31,27 @@ const schema = z.object({
   MSG91_OTP_TEMPLATE_ID: z.string().optional().default(''),
   MSG91_SENDER_ID: z.string().optional().default(''),
   UPLOAD_DIR: z.string().default('./uploads'),
+  // Media storage for CMS images: auto picks the first configured of r2 → s3 → cloudinary, else local disk
+  STORAGE_DRIVER: z.enum(['auto', 'local', 's3', 'r2', 'cloudinary']).default('auto'),
+  S3_BUCKET: z.string().optional().default(''),
+  S3_REGION: z.string().optional().default('ap-south-1'),
+  S3_ACCESS_KEY_ID: z.string().optional().default(''),
+  S3_SECRET_ACCESS_KEY: z.string().optional().default(''),
+  S3_ENDPOINT: z.string().optional().default(''), // optional (MinIO / DigitalOcean Spaces)
+  S3_PUBLIC_URL: z.string().optional().default(''), // CDN / CloudFront base; default https://<bucket>.s3.<region>.amazonaws.com
+  R2_ACCOUNT_ID: z.string().optional().default(''),
+  R2_BUCKET: z.string().optional().default(''),
+  R2_ACCESS_KEY_ID: z.string().optional().default(''),
+  R2_SECRET_ACCESS_KEY: z.string().optional().default(''),
+  R2_PUBLIC_URL: z.string().optional().default(''), // r2.dev URL or custom domain (required for R2)
+  CLOUDINARY_CLOUD_NAME: z.string().optional().default(''),
+  CLOUDINARY_API_KEY: z.string().optional().default(''),
+  CLOUDINARY_API_SECRET: z.string().optional().default(''),
+  CLOUDINARY_FOLDER: z.string().optional().default('cpf'),
+  // Hugging Face (AI writing for CMS landing pages) — OpenAI-compatible router
+  HF_TOKEN: z.string().optional().default(''),
+  HF_MODEL: z.string().optional().default('auto'), // auto = best available chat model for your enabled providers
+  HF_API_URL: z.string().optional().default('https://router.huggingface.co/v1/chat/completions'),
   PUBLIC_API_URL: z.string().default('http://localhost:5000'),
   BOOKING_URL: z.string().default('http://localhost:5173'),
   WEBSITE_API_KEY: z.string().optional().default(''),

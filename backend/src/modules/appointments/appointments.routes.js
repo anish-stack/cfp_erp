@@ -12,6 +12,7 @@ import { Appointment } from '../../models/Appointment.js';
 import { Patient } from '../../models/Patient.js';
 import * as svc from './appointments.service.js';
 import * as notify from '../../services/notify.js';
+import { streamDocument } from '../../services/documents.js';
 
 const doctorOrAny = z.union([objectId, z.literal('any')]);
 
@@ -141,6 +142,11 @@ r.patch('/:id/notes', permit('appointments.edit'), validate({ params: idParam, b
   a.notes = req.body.notes;
   await a.save();
   ok(res, a);
+}));
+
+r.get('/:id/slip', permit('appointments.view'), validate({ params: idParam }), asyncHandler(async (req, res) => {
+  const a = await loadScoped(req);
+  return streamDocument(res, 'slip', a._id);
 }));
 
 /** resend the WhatsApp matching the current status */

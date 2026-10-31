@@ -26,6 +26,16 @@ const schema = new mongoose.Schema(
       showLogoOnPdf: { type: Boolean, default: true },
     },
     inventory: { expiryAlertDays: { type: Number, default: 90 } },
+    // colour palette (hex). console + booking portal + PDFs
+    theme: {
+      console: { primary: { type: String, default: '#e21f26' }, sidebar: { type: String, default: '#ffffff' }, radius: { type: Number, default: 10 } },
+      booking: { primary: { type: String, default: '#e21f26' }, background: { type: String, default: '#fff5f5' } },
+      pdf: { type: String, default: '' }, // empty → console primary
+    },
+    pdf: {
+      rxFooter: { type: String, default: 'Take medicines as advised. In case of excessive bleeding or severe pain, contact the clinic immediately.' },
+      showSignature: { type: Boolean, default: true },
+    },
     notifications: {
       sms: { type: Boolean, default: true },
       whatsapp: { type: Boolean, default: true },

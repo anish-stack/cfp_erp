@@ -163,6 +163,10 @@ const formSchema = new mongoose.Schema(
     // landing page content
     page: { headline: String, subheadline: String, body: String, heroImage: String, ctaText: { type: String, default: 'Book Free Consultation' }, bullets: [String], seoTitle: String, seoDescription: String },
     fields: { type: [fieldSchema], default: [] },
+    // drag & drop page builder: ordered sections; props are rendered as plain text/urls (never raw HTML)
+    // NOTE: a key literally named "type" must be wrapped ({ type: String }) or Mongoose reads it as the array's SchemaType
+    blocks: { type: [new mongoose.Schema({ id: String, type: { type: String }, hidden: Boolean, props: mongoose.Schema.Types.Mixed }, { _id: false, minimize: false })], default: [] },
+    design: { primary: { type: String, default: '#e21f26' }, accent: { type: String, default: '#d4a017' }, dark: { type: String, default: '#0f172a' }, tint: { type: String, default: '#fff1f1' }, cta: { type: String, default: '#14b8a6' }, font: { type: String, default: 'Inter' }, showHeader: { type: Boolean, default: true } },
     campaign: { type: ObjectId, ref: 'Campaign' },
     branch: { type: ObjectId, ref: 'Branch' },
     defaultSource: { type: String, enum: LEAD_SOURCES, default: 'website' },

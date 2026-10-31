@@ -37,7 +37,11 @@ export function useAction(fn, { success, invalidate = [], onSuccess, onError } =
 }
 
 /** public clinic profile (name, logo URL) */
-export const usePublicClinic = () => useQuery({ queryKey: ['public-clinic'], queryFn: () => get('/public/clinic', undefined, { branchScoped: false }).then((r) => r.clinic), staleTime: 300_000 });
+export const usePublicInfo = () => useQuery({ queryKey: ['public-clinic'], queryFn: () => get('/public/clinic', undefined, { branchScoped: false }), staleTime: 300_000 });
+export const usePublicClinic = () => {
+  const q = usePublicInfo();
+  return { ...q, data: q.data?.clinic };
+};
 
 /** common lookups */
 /** branches the user may act on (needs branches.view; falls back to own branches) */

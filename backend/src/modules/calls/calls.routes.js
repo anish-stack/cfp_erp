@@ -16,6 +16,7 @@ import { Patient } from '../../models/Patient.js';
 import { User } from '../../models/User.js';
 import * as exotel from '../../services/exotel.js';
 import { finishCall } from './calls.service.js';
+import { cfg } from '../../services/runtimeConfig.js';
 
 const r = Router();
 r.use(auth, branchScope);
@@ -30,11 +31,11 @@ async function callScope(req) {
 
 r.get('/config', permit.any('leads.view', 'patients.view'), asyncHandler(async (req, res) => {
   const me = await User.findById(req.user._id).select('phone').lean();
-  const out = { enabled: exotel.exotelConfigured(), callerId: env.EXOTEL_CALLER_ID || null, agentPhone: me?.phone || null };
+  const out = { enabled: exotel.exotelConfigured(), callerId: cfg.EXOTEL_CALLER_ID || null, agentPhone: me?.phone || null };
   // callback URLs carry the secret token → only for admins who configure Exotel
   if (hasPerm(req, 'settings.manage_settings')) {
     out.webhooks = { status: exotel.webhookUrl('status'), inbound: exotel.webhookUrl('inbound'), connect: exotel.webhookUrl('connect') };
-    out.tokenSet = Boolean(env.EXOTEL_WEBHOOK_TOKEN);
+    out.tokenSet = Boolean(cfg.EXOTEL_WEBHOOK_TOKEN);
   }
   ok(res, out);
 }));
@@ -61,7 +62,7 @@ r.post('/', permit.any('leads.edit', 'patients.edit'), validate({ body: z.object
   }
   if (!exotel.exotelConfigured()) throw new ApiError(503, 'Exotel is not configured — dial from your phone instead');
   const me = await User.findById(req.user._id).select('phone').lean();
-  const call = await Call.create({ direction: 'outbound', lead: lead?._id, patient: patient?._id, agent: req.user._id, branch: lead?.branch || req.activeBranch || undefined, from: exotel.tenDigits(me?.phone), to: exotel.tenDigits(phone), callerId: env.EXOTEL_CALLER_ID, status: 'queued' });
+  const call = await Call.create({ direction: 'outbound', lead: lead?._id, patient: patient?._id, agent: req.user._id, branch: lead?.branch || req.activeBranch || undefined, from: exotel.tenDigits(me?.phone), to: exotel.tenDigits(phone), callerId: cfg.EXOTEL_CALLER_ID, status: 'queued' });
   try {
     const x = await exotel.connect({ agentPhone: me?.phone, customerPhone: phone, callId: call._id });
     call.sid = x.Sid;

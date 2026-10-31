@@ -1,12 +1,15 @@
 import { Worker, UnrecoverableError } from 'bullmq';
+import '../models/index.js';
 import { connectRedis, redis } from '../config/redis.js';
 import { connectDB } from '../config/db.js';
 import { logger } from '../config/logger.js';
 import { QUEUES } from './queues.js';
 import { handlers, registerRepeatables } from './handlers.js';
+import { startConfigRefresh } from '../services/runtimeConfig.js';
 
 async function main() {
   await connectDB();
+  await startConfigRefresh(); // integration keys saved in Admin → Settings override .env
   await connectRedis();
   await registerRepeatables();
 

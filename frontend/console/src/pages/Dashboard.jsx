@@ -56,7 +56,7 @@ export default function Dashboard() {
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Clock className="h-4 w-4" /> Up next today</CardTitle></CardHeader>
           <CardContent className="space-y-1">
             {isLoading ? <Skeleton className="h-40 w-full" /> : !d.upcoming?.length ? <EmptyState title="No pending appointments" /> : d.upcoming.map((u) => (
-              <button key={u._id} onClick={() => nav(`/appointments?open=${u._id}`)} className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-muted">
+              <button key={u._id} onClick={() => nav(`/appointments/${u._id}`)} className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-muted">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{u.patient?.name}</p>
                   <p className="text-xs text-muted-foreground">{fmtTime(u.start)} · {u.doctor?.name}{u.tokenNo ? ` · Token ${u.tokenNo}` : ''}</p>

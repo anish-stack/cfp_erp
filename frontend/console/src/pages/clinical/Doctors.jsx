@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Plus, Trash2 } from 'lucide-react';
+import { CalendarClock, Plus, Trash2, PenLine } from 'lucide-react';
+import { SignatureUpload } from '@/components/clinic/SignatureUpload';
+import { useQueryClient } from '@tanstack/react-query';
 import { ResourcePage } from '@/components/common/ResourcePage';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -8,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { Switch } from '@/components/ui/checkbox';
 import { Field } from '@/components/common/Field';
-import { useGet, useAction } from '@/hooks/queries';
+import { useGet, useAction, useBranches } from '@/hooks/queries';
 import { put } from '@/lib/api';
 import { useCan } from '@/store/auth';
 import { inr } from '@/lib/utils';
@@ -32,6 +34,14 @@ function ScheduleEditor({ doctor, onClose }) {
     days: days.map((d) => ({ weekday: d.weekday, isActive: d.isActive, sessions: d.isActive ? d.sessions : [], slotMinutes: d.slotMinutes === '' ? null : Number(d.slotMinutes), gapMinutes: d.gapMinutes === '' ? null : Number(d.gapMinutes), capacityPerSlot: Number(d.capacityPerSlot) || 1 })),
   }), { success: 'Schedule saved', invalidate: ['schedules', 'availability'] });
   const upd = (w, patch) => setDays((ds) => ds.map((d) => (d.weekday === w ? { ...d, ...patch } : d)));
+  const { data: allBranches = [] } = useBranches();
+  const fillFromBranch = () => {
+    const b = allBranches.find((x) => x._id === branch);
+    if (!b) return;
+    const off = b.settings?.weeklyOff || [];
+    const sessions = [{ start: b.settings?.openTime || '10:00', end: b.settings?.closeTime || '19:00' }];
+    setDays((ds) => ds.map((d) => ({ ...d, isActive: !off.includes(d.weekday), sessions })));
+  };
   const editable = can('slots.edit');
 
   return (
@@ -39,7 +49,10 @@ function ScheduleEditor({ doctor, onClose }) {
       <Field label="Branch"><Select value={branch} onChange={(e) => setBranch(e.target.value)}>{doctor.branches.map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}</Select></Field>
       {isLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : (
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">Blank slot/gap → branch default. Branch breaks (lunch) and weekly offs still apply.</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">Blank slot/gap → branch default. Branch breaks (lunch) and weekly offs still apply. Make sure the doctor isn't scheduled at two branches at the same time.</p>
+            {editable && <Button size="sm" variant="outline" onClick={fillFromBranch}>Fill from branch hours</Button>}
+          </div>
           {days.map((d) => (
             <div key={d.weekday} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
               <div className="flex w-20 items-center gap-2"><Switch checked={d.isActive} onCheckedChange={(v) => upd(d.weekday, { isActive: v })} disabled={!editable} /><span className="text-sm font-medium">{DAYS[d.weekday]}</span></div>
@@ -93,6 +106,8 @@ const FIELDS = [
 
 export default function Doctors() {
   const [sched, setSched] = useState(null);
+  const [sig, setSig] = useState(null);
+  const qc = useQueryClient();
   return (
     <>
       <ResourcePage
@@ -110,11 +125,20 @@ export default function Doctors() {
           { key: 'fee', header: 'Fee', cell: (d) => inr(d.consultationFee) },
           { key: 'online', header: 'Online', cell: (d) => (d.acceptsOnlineBooking ? <Badge variant="success">Yes</Badge> : <Badge variant="secondary">No</Badge>) },
           { key: 'login', header: 'Login', cell: (d) => d.user?.name || '—' },
+          { key: 'sig', header: 'Signature', cell: (d) => (d.signature?.storedName ? <Badge variant="success">Uploaded</Badge> : <Badge variant="outline">—</Badge>) },
           { key: 'active', header: 'Status', cell: (d) => (d.isActive ? <Badge variant="success">Active</Badge> : <Badge variant="secondary">Inactive</Badge>) },
         ]}
-        rowActions={(d) => <DropdownItem onSelect={() => setSched(d)}><CalendarClock /> Weekly schedule</DropdownItem>}
+        rowActions={(d) => (
+          <>
+            <DropdownItem onSelect={() => setSched(d)}><CalendarClock /> Weekly schedule</DropdownItem>
+            <DropdownItem onSelect={() => setSig(d)}><PenLine /> Signature</DropdownItem>
+          </>
+        )}
         onRowClick={setSched}
       />
+      <Dialog open={!!sig} onOpenChange={(o) => !o && setSig(null)}>
+        <DialogContent title={`Signature · ${sig?.name || ''}`}>{sig && <SignatureUpload doctorId={sig._id} hasSignature={!!sig.signature?.storedName} onChange={(has) => { setSig((x) => ({ ...x, signature: has ? { storedName: 'x' } : undefined })); qc.invalidateQueries({ queryKey: ['/doctors'] }); }} />}</DialogContent>
+      </Dialog>
       <Dialog open={!!sched} onOpenChange={(o) => !o && setSched(null)}>
         <DialogContent title={`Schedule · ${sched?.name || ''}`} size="xl">{sched && <ScheduleEditor doctor={sched} onClose={() => setSched(null)} />}</DialogContent>
       </Dialog>

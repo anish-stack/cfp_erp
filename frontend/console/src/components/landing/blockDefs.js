@@ -1,0 +1,40 @@
+import { PanelTop, Sparkles, FileInput, Images, LayoutGrid, Type, ListChecks, Columns2, Megaphone, BarChart3, HelpCircle, Image, Video, Stethoscope, PanelBottom, MoveVertical } from 'lucide-react';
+
+/** field kinds: text | textarea | image | video | color | select | toggle | number | link | icon | list */
+const LINK_HINT = '#form scrolls to the form · tel:… · https://…';
+export const BLOCK_DEFS = {
+  header: { label: 'Header bar', icon: PanelTop, group: 'Layout', defaults: { logo: '', title: '', phone: '', ctaText: 'Appointment', ctaLink: '#form', sticky: true },
+    fields: [['logo', 'Logo', 'image'], ['title', 'Name (if no logo)', 'text'], ['phone', 'Phone', 'text'], ['ctaText', 'Button text', 'text'], ['ctaLink', 'Button link', 'link'], ['sticky', 'Sticky on scroll', 'toggle']] },
+  hero: { label: 'Hero banner', icon: Sparkles, group: 'Content', defaults: { title: 'Your headline here', subtitle: 'Short supporting line', image: '', style: 'light', ctaText: 'Book Free Consultation', ctaLink: '#form' },
+    fields: [['eyebrow', 'Small label', 'text'], ['title', 'Headline', 'textarea'], ['subtitle', 'Sub-headline', 'textarea'], ['image', 'Side image', 'image'], ['bgImage', 'Background image (optional)', 'image'], ['style', 'Style', 'select', ['light', 'brand', 'dark']], ['align', 'Layout', 'select', ['split', 'center']], ['ctaText', 'Button 1 text', 'text'], ['ctaLink', 'Button 1 link', 'link'], ['ctaText2', 'Button 2 text', 'text'], ['ctaLink2', 'Button 2 link', 'link']] },
+  form: { label: 'Enquiry form', icon: FileInput, group: 'Content', defaults: { title: 'Book An Appointment', layout: 'inline', bg: 'brand', buttonText: 'SUBMIT NOW' },
+    fields: [['title', 'Title', 'text'], ['subtitle', 'Subtitle', 'text'], ['layout', 'Layout', 'select', ['inline', 'card']], ['bg', 'Background', 'select', ['brand', 'dark', 'light']], ['buttonText', 'Button text', 'text'], ['image', 'Image (card layout)', 'image']], note: 'Fields come from the form’s “Fields” tab. Only the first form block on a page gets id #form.' },
+  gallery: { label: 'Testimonials / gallery', icon: Images, group: 'Media', defaults: { eyebrow: 'Success Story', heading: 'Patient Success Story', columns: 3, items: [{ image: '', caption: '' }, { image: '', caption: '' }, { image: '', caption: '' }] },
+    fields: [['eyebrow', 'Small label', 'text'], ['heading', 'Heading', 'text'], ['columns', 'Columns', 'select', ['2', '3', '4']], ['items', 'Items', 'list', [['image', 'Image / poster', 'image'], ['video', 'Video (YouTube or upload)', 'video'], ['caption', 'Caption', 'text'], ['link', 'Link', 'link']]]] },
+  features: { label: 'Feature cards', icon: LayoutGrid, group: 'Content', defaults: { heading: 'Why choose us', columns: 3, items: [{ icon: 'Award', title: 'Title', text: 'Short text' }, { icon: 'Zap', title: 'Title', text: 'Short text' }, { icon: 'Leaf', title: 'Title', text: 'Short text' }] },
+    fields: [['heading', 'Heading', 'text'], ['subheading', 'Sub-heading', 'textarea'], ['columns', 'Columns', 'select', ['2', '3', '4']], ['items', 'Cards', 'list', [['icon', 'Icon', 'icon'], ['image', 'Custom icon image', 'image'], ['title', 'Title', 'text'], ['text', 'Text', 'textarea']]]] },
+  text: { label: 'Text section', icon: Type, group: 'Content', defaults: { heading: 'Heading', body: 'Write your content…', align: 'left', bg: 'white' },
+    fields: [['heading', 'Heading', 'text'], ['body', 'Body', 'textarea'], ['align', 'Align', 'select', ['left', 'center']], ['bg', 'Background', 'select', ['white', 'tint', 'dark', 'brand']], ['buttonText', 'Button text', 'text'], ['buttonLink', 'Button link', 'link']] },
+  list: { label: 'List (conditions)', icon: ListChecks, group: 'Content', defaults: { heading: 'Conditions We Treat', intro: '', bg: 'tint', items: [{ title: 'Item', text: 'Description' }] },
+    fields: [['heading', 'Heading', 'text'], ['intro', 'Intro', 'textarea'], ['bg', 'Background', 'select', ['tint', 'white', 'dark', 'brand']], ['items', 'Items', 'list', [['title', 'Title', 'text'], ['text', 'Text', 'textarea']]]] },
+  imageText: { label: 'Image + list', icon: Columns2, group: 'Content', defaults: { heading: 'Our Treatments', intro: '', image: '', imageSide: 'right', items: [{ title: 'Item', text: 'Description' }] },
+    fields: [['heading', 'Heading', 'text'], ['intro', 'Intro', 'textarea'], ['image', 'Image', 'image'], ['imageSide', 'Image side', 'select', ['right', 'left']], ['items', 'Items', 'list', [['title', 'Title', 'text'], ['text', 'Text', 'textarea']]]] },
+  cta: { label: 'Call to action', icon: Megaphone, group: 'Content', defaults: { eyebrow: 'Book Appointment', heading: 'Get a call back in 30 minutes', bgColor: '#4f46e5', buttons: [{ label: 'Get Appointment', link: '#form', style: 'light' }] },
+    fields: [['eyebrow', 'Small label', 'text'], ['heading', 'Heading', 'textarea'], ['text', 'Text', 'textarea'], ['bgColor', 'Background colour', 'color'], ['bgImage', 'Background image', 'image'], ['buttons', 'Buttons', 'list', [['label', 'Label', 'text'], ['link', 'Link', 'link'], ['style', 'Style', 'select', ['light', 'outline', 'accent']]]]] },
+  stats: { label: 'Numbers / stats', icon: BarChart3, group: 'Content', defaults: { bg: 'brand', items: [{ value: '22+', label: 'Years experience' }, { value: '50,000+', label: 'Patients treated' }, { value: '5', label: 'Clinics in Delhi NCR' }] },
+    fields: [['bg', 'Background', 'select', ['brand', 'dark', 'tint', 'white']], ['items', 'Numbers', 'list', [['value', 'Value', 'text'], ['label', 'Label', 'text']]]] },
+  faq: { label: 'FAQ', icon: HelpCircle, group: 'Content', defaults: { heading: 'Frequently asked questions', items: [{ q: 'Is laser treatment painful?', a: 'No — it is done under local anaesthesia with minimal discomfort.' }] },
+    fields: [['heading', 'Heading', 'text'], ['bg', 'Background', 'select', ['white', 'tint']], ['items', 'Questions', 'list', [['q', 'Question', 'text'], ['a', 'Answer', 'textarea']]]] },
+  doctors: { label: 'Doctors', icon: Stethoscope, group: 'Content', defaults: { heading: 'Meet our doctors', items: [{ photo: '', name: 'Dr. Rakesh Gupta', qualification: 'B.A.M.S., Kshar Sutra specialist', text: '' }, { photo: '', name: 'Dr. Ruchi Gupta', qualification: 'B.A.M.S.', text: '' }] },
+    fields: [['heading', 'Heading', 'text'], ['bg', 'Background', 'select', ['tint', 'white', 'dark']], ['items', 'Doctors', 'list', [['photo', 'Photo', 'image'], ['name', 'Name', 'text'], ['qualification', 'Qualification', 'text'], ['text', 'About', 'textarea']]]] },
+  image: { label: 'Image', icon: Image, group: 'Media', defaults: { image: '', rounded: true },
+    fields: [['image', 'Image', 'image'], ['alt', 'Alt text', 'text'], ['caption', 'Caption', 'text'], ['link', 'Link', 'link'], ['maxWidth', 'Max width (px)', 'number'], ['rounded', 'Rounded corners', 'toggle']] },
+  video: { label: 'Video', icon: Video, group: 'Media', defaults: { heading: '', url: '' },
+    fields: [['heading', 'Heading', 'text'], ['url', 'YouTube link or uploaded video', 'video'], ['poster', 'Poster image', 'image'], ['bg', 'Background', 'select', ['white', 'tint', 'dark']]] },
+  footer: { label: 'Footer', icon: PanelBottom, group: 'Layout', defaults: { about: '', phone: '', email: '', addresses: [], copyright: '' },
+    fields: [['logo', 'Logo', 'image'], ['about', 'About text', 'textarea'], ['phone', 'Phone', 'text'], ['email', 'Email', 'text'], ['links', 'Links', 'list', [['label', 'Label', 'text'], ['link', 'Link', 'link']]], ['addresses', 'Addresses', 'list', [['title', 'Title', 'text'], ['text', 'Address / timings', 'textarea']]], ['copyright', 'Copyright line', 'text']] },
+  spacer: { label: 'Spacer', icon: MoveVertical, group: 'Layout', defaults: { height: 40 }, fields: [['height', 'Height (px)', 'number']] },
+};
+export const LINK_PLACEHOLDER = LINK_HINT;
+export const newId = (t) => `${t}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+export const clone = (o) => JSON.parse(JSON.stringify(o));

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Copy, ExternalLink, Pencil, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, Copy, ExternalLink, Pencil, ArrowUp, ArrowDown, Paintbrush, Sparkles } from 'lucide-react';
+import { AiCreateDialog } from '@/components/landing/AiCreateDialog';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
@@ -41,11 +43,11 @@ function Builder({ form, onDone }) {
     const body = { ...f, campaign: f.campaign || null, branch: f.branch || null, redirectUrl: f.redirectUrl || '', fields: f.fields.map(({ key, label, type, required, options, placeholder, mapTo }) => ({ key, label, type, required: !!required, options: ['select', 'radio', 'checkbox'].includes(type) ? options || [] : undefined, placeholder: placeholder || undefined, mapTo: mapTo || null })) };
     delete body._id; delete body.submissions; delete body.createdAt; delete body.updatedAt; delete body.__v;
     return form ? patch(`/crm/forms/${form._id}`, body) : post('/crm/forms', body);
-  }, { success: 'Saved', invalidate: ['/crm/forms'], onSuccess: onDone });
+  }, { success: 'Saved', invalidate: ['/crm/forms'], onSuccess: (d) => onDone(!form && d?.kind === 'landing_page' ? d._id : null) });
 
   return (
     <Tabs defaultValue="setup">
-      <TabsList><TabsTrigger value="setup">Setup</TabsTrigger><TabsTrigger value="fields">Fields ({f.fields.length})</TabsTrigger>{f.kind === 'landing_page' && <TabsTrigger value="page">Page content</TabsTrigger>}</TabsList>
+      <TabsList><TabsTrigger value="setup">Setup</TabsTrigger><TabsTrigger value="fields">Fields ({f.fields.length})</TabsTrigger>{f.kind === 'landing_page' && <TabsTrigger value="page">Basic content</TabsTrigger>}</TabsList>
       <TabsContent value="setup" className="grid gap-3 sm:grid-cols-2">
         <Field label="Name" required><Input value={f.name} onChange={(e) => set('name', e.target.value)} /></Field>
         <Field label="Slug (URL)" required hint={`${BOOKING_URL}/f/${f.slug || '…'}`}><Input value={f.slug} onChange={(e) => set('slug', slugify(e.target.value))} /></Field>
@@ -77,6 +79,7 @@ function Builder({ form, onDone }) {
         <Button variant="outline" size="sm" onClick={() => set('fields', [...f.fields, { key: `field_${f.fields.length + 1}`, label: 'New field', type: 'text', required: false, mapTo: null }])}><Plus /> Add field</Button>
       </TabsContent>
       <TabsContent value="page" className="grid gap-3">
+        <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">Used only when the page has no designed blocks. For a full drag &amp; drop page use <b>Design</b> (paintbrush) in the list.</p>
         <Field label="Headline"><Input value={f.page.headline || ''} onChange={(e) => setPage('headline', e.target.value)} /></Field>
         <Field label="Sub-headline"><Input value={f.page.subheadline || ''} onChange={(e) => setPage('subheadline', e.target.value)} /></Field>
         <Field label="Bullets (one per line)"><Textarea rows={3} value={(f.page.bullets || []).join('\n')} onChange={(e) => setPage('bullets', e.target.value.split('\n').filter(Boolean))} /></Field>
@@ -88,23 +91,27 @@ function Builder({ form, onDone }) {
           <Field label="SEO description"><Input value={f.page.seoDescription || ''} onChange={(e) => setPage('seoDescription', e.target.value)} /></Field>
         </div>
       </TabsContent>
-      <div className="mt-4 flex justify-end gap-2"><Button variant="outline" onClick={onDone}>Cancel</Button><Button disabled={!f.name || !f.slug || !f.fields.some((x) => x.mapTo === 'phone')} loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div>
+      <div className="mt-4 flex justify-end gap-2"><Button variant="outline" onClick={() => onDone()}>Cancel</Button><Button disabled={!f.name || !f.slug || !f.fields.some((x) => x.mapTo === 'phone')} loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div>
     </Tabs>
   );
 }
 
 export default function Forms() {
   const can = useCan();
+  const nav = useNavigate();
   const [editing, setEditing] = useState(null);
+  const [aiOpen, setAiOpen] = useState(false);
   const { data, isLoading } = useGet(['/crm/forms'], '/crm/forms', { all: 'true' });
+  const { data: campaigns = [] } = useGet(['campaigns-all'], '/crm/campaigns', { all: 'true' });
   const copy = (t) => navigator.clipboard.writeText(t).then(() => toast.success('Copied'));
   const embed = (slug) => `<form id="cpf-lead" data-slug="${slug}"></form>\n<script>/* POST ${API_URL}/public/forms/${slug}/submit  body: { data: {...fields}, utm: {...} } */</script>`;
   return (
     <div>
-      <PageHeader title="CMS & Forms" description="Landing pages and enquiry forms that drop leads straight into the CRM with UTM tracking" actions={<Can perm="cms.create"><Button onClick={() => setEditing({})}><Plus /> New</Button></Can>} />
+      <PageHeader title="CMS & Forms" description="Landing pages and enquiry forms that drop leads straight into the CRM with UTM tracking" actions={<Can perm="cms.create"><div className="flex gap-2"><Button variant="outline" onClick={() => setAiOpen(true)}><Sparkles /> Create with AI</Button><Button onClick={() => setEditing({})}><Plus /> New</Button></div></Can>} />
+      <AiCreateDialog open={aiOpen} onOpenChange={setAiOpen} fields={DEFAULT_FIELDS} campaigns={campaigns} />
       <DataTable loading={isLoading} rows={data} columns={[
         { key: 'n', header: 'Name', cell: (f) => <div><p className="font-medium">{f.name}</p><p className="font-mono text-xs text-muted-foreground">/f/{f.slug}</p></div> },
-        { key: 'k', header: 'Kind', cell: (f) => <Badge variant="outline">{f.kind === 'landing_page' ? 'Landing page' : 'Form'}</Badge> },
+        { key: 'k', header: 'Kind', cell: (f) => <div className="flex gap-1"><Badge variant="outline">{f.kind === 'landing_page' ? 'Landing page' : 'Form'}</Badge>{f.blocks?.length > 0 && <Badge variant="info">{f.blocks.length} blocks</Badge>}</div> },
         { key: 'c', header: 'Campaign', cell: (f) => f.campaign?.name || 'utm-based' },
         { key: 's', header: 'Submissions', cell: (f) => f.submissions },
         { key: 'a', header: 'Status', cell: (f) => (f.isActive ? <Badge variant="success">Live</Badge> : <Badge variant="secondary">Off</Badge>) },
@@ -113,12 +120,13 @@ export default function Forms() {
             <Button size="icon" variant="ghost" className="h-7 w-7" title="Copy public URL" onClick={() => copy(`${BOOKING_URL}/f/${f.slug}?utm_source=google&utm_medium=cpc&utm_campaign=${f.campaign?.name ? slugify(f.campaign.name) : 'campaign'}`)}><Copy /></Button>
             <Button size="icon" variant="ghost" className="h-7 w-7" title="Copy API snippet" onClick={() => copy(embed(f.slug))}><span className="text-[10px] font-bold">{'</>'}</span></Button>
             <Button size="icon" variant="ghost" className="h-7 w-7" asChild><a href={`${BOOKING_URL}/f/${f.slug}`} target="_blank" rel="noreferrer"><ExternalLink /></a></Button>
-            {can('cms.edit') && <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(f)}><Pencil /></Button>}
+            {can('cms.view') && f.kind === 'landing_page' && <Button size="icon" variant="ghost" className="h-7 w-7" title="Design page (drag & drop)" onClick={() => nav(`/forms/${f._id}/design`)}><Paintbrush /></Button>}
+            {can('cms.edit') && <Button size="icon" variant="ghost" className="h-7 w-7" title="Settings & fields" onClick={() => setEditing(f)}><Pencil /></Button>}
           </div>
         ) },
       ]} />
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent title={editing?._id ? `Edit · ${editing.name}` : 'New landing page / form'} size="xl">{editing && <Builder form={editing._id ? editing : null} onDone={() => setEditing(null)} />}</DialogContent>
+        <DialogContent title={editing?._id ? `Edit · ${editing.name}` : 'New landing page / form'} size="xl">{editing && <Builder form={editing._id ? editing : null} onDone={(newId) => { setEditing(null); if (newId) nav(`/forms/${newId}/design`); }} />}</DialogContent>
       </Dialog>
     </div>
   );

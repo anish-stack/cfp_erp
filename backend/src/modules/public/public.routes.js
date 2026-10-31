@@ -12,10 +12,9 @@ import { Branch } from '../../models/Branch.js';
 import { getSettings } from '../../models/Settings.js';
 import { createLead } from '../crm/crm.service.js';
 import { verifyDocLink } from '../../utils/signedLink.js';
-import { Invoice } from '../../models/Billing.js';
-import { Prescription } from '../../models/Clinical.js';
-import { renderInvoicePdf, renderPrescriptionPdf } from '../../services/pdf.js';
-import { pdfBranding, logoPath } from '../../services/branding.js';
+import { streamDocument } from '../../services/documents.js';
+import { logoPath } from '../../services/branding.js';
+import { cfg } from '../../services/runtimeConfig.js';
 
 /** Website / landing-page facing endpoints (no login). Rate limited. */
 const r = Router();
@@ -27,7 +26,7 @@ const utm = z.object({ source: z.string().max(100), medium: z.string().max(100),
 r.get('/clinic', asyncHandler(async (_req, res) => {
   const s = await getSettings();
   const logo = s.clinic?.logoFile ? `${env.PUBLIC_API_URL.replace(/\/$/, '')}/api/v1/public/logo?v=${new Date(s.clinic.logoUpdatedAt || 0).getTime()}` : null;
-  ok(res, { clinic: { name: s.clinic?.name, tagline: s.clinic?.tagline, phone: s.clinic?.phone, whatsapp: s.clinic?.whatsapp, email: s.clinic?.email, website: s.clinic?.website, logo } });
+  ok(res, { appName: cfg.APP_NAME, clinic: { name: s.clinic?.name, tagline: s.clinic?.tagline, phone: s.clinic?.phone, whatsapp: s.clinic?.whatsapp, email: s.clinic?.email, website: s.clinic?.website, logo }, theme: { console: s.theme?.console || {}, booking: s.theme?.booking || {} } });
 }));
 
 /** uploaded clinic logo (public: shown on booking portal, login screen) */
@@ -41,7 +40,7 @@ r.get('/logo', asyncHandler(async (_req, res) => {
 }));
 
 r.get('/forms/:slug', validate({ params: z.object({ slug: z.string().regex(/^[a-z0-9-]+$/) }) }), asyncHandler(async (req, res) => {
-  const f = await EnquiryForm.findOne({ slug: req.params.slug, isActive: true }).select('name slug kind page fields successMessage redirectUrl branch').lean();
+  const f = await EnquiryForm.findOne({ slug: req.params.slug, isActive: true }).select('name slug kind page fields successMessage redirectUrl branch blocks design').lean();
   if (!f) throw ApiError.notFound('Form not found');
   const branches = f.fields.some((x) => x.mapTo === 'branch') ? await Branch.find({ isActive: true }).select('name').sort({ name: 1 }).lean() : [];
   ok(res, { ...f, branches });
@@ -81,26 +80,19 @@ r.post('/forms/:slug/submit', submitLimiter, validate({ params: z.object({ slug:
  * /public/docs/invoice/<id>.pdf?e=<unix>&s=<hmac>
  */
 const docLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false });
-r.get('/docs/:type/:file', docLimiter, asyncHandler(async (req, res) => {
-  const { type, file } = req.params;
-  const id = String(file).replace(/\.pdf$/, '');
-  if (!/^[a-f0-9]{24}$/.test(id) || !verifyDocLink(type, id, req.query.e, req.query.s)) throw ApiError.notFound('Link invalid or expired');
-  const b = await pdfBranding();
-  res.setHeader('Cache-Control', 'private, no-store');
+async function serveDoc(req, res, type, id, e, s) {
+  if (!/^[a-f0-9]{24}$/.test(id) || !verifyDocLink(type, id, e, s)) throw ApiError.notFound('Link invalid or expired');
+  return renderPublicDoc(res, type, id);
+}
+// current format: /docs/<type>/<id>/<exp>/<sig>/<name>.pdf
+r.get('/docs/:type/:id/:e/:s/:name', docLimiter, asyncHandler((req, res) => serveDoc(req, res, req.params.type, req.params.id, req.params.e, req.params.s)));
+// legacy format: /docs/<type>/<id>.pdf?e=&s=
+r.get('/docs/:type/:file', docLimiter, asyncHandler((req, res) => serveDoc(req, res, req.params.type, String(req.params.file).replace(/\.pdf$/, ''), req.query.e, req.query.s)));
+
+async function renderPublicDoc(res, type, id) {
   res.setHeader('X-Robots-Tag', 'noindex');
-  if (type === 'invoice') {
-    const inv = await Invoice.findById(id).populate('patient').populate('branch').populate('doctor', 'name').populate('createdBy', 'name');
-    if (!inv) throw ApiError.notFound();
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${inv.invoiceNo.replace(/\//g, '-')}.pdf"`);
-    return renderInvoicePdf(inv, b.clinic, b.footer, res, b.logo);
-  }
-  const rx = await Prescription.findById(id).populate('patient').populate('doctor').populate('branch');
-  if (!rx) throw ApiError.notFound();
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${rx.rxNo.replace(/\//g, '-')}.pdf"`);
-  return renderPrescriptionPdf(rx, res, b.clinic, b.logo);
-}));
+  return streamDocument(res, type, id);
+}
 
 /** Server-to-server lead push from main website / ad platforms. Header: x-api-key */
 const keyOk = (k) => {

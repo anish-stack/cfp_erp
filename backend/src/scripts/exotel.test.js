@@ -132,7 +132,7 @@ await t('invoice PDF renders with logo', async () => {
   const chunks = [];
   out.on('data', (c) => chunks.push(c));
   const done = new Promise((r) => out.on('end', r));
-  renderInvoicePdf(inv, { name: 'Centre For Piles & Fistula', tagline: 'Ayurvedic Kshar Sutra & Laser care' }, 'Get well soon', out, png);
+  renderInvoicePdf(inv, { clinic: { name: 'Centre For Piles & Fistula', tagline: 'Ayurvedic Kshar Sutra & Laser care' }, footer: 'Get well soon', logo: png, color: '#137a6f' }, out);
   await done;
   const pdf = Buffer.concat(chunks);
   fs.writeFileSync(path.join(tmp, 'invoice-logo.pdf'), pdf);
