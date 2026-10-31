@@ -1,0 +1,10 @@
+{
+  "name": "cpf-erp-frontend",
+  "private": true,
+  "workspaces": ["console", "booking"],
+  "scripts": {
+    "dev:console": "npm run dev -w console",
+    "dev:booking": "npm run dev -w booking",
+    "build": "npm run build -w console && npm run build -w booking"
+  }
+}

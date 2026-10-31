@@ -1,0 +1,89 @@
+import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import compression from 'compression';
+import cookieParser from 'cookie-parser';
+import mongoose from 'mongoose';
+import pinoHttp from 'pino-http';
+import { env } from './config/env.js';
+import { logger } from './config/logger.js';
+import { redis } from './config/redis.js';
+import { apiLimiter } from './middleware/rateLimit.js';
+import { errorHandler, notFound } from './middleware/error.js';
+
+import authRoutes from './modules/auth/auth.routes.js';
+import roleRoutes from './modules/roles/roles.routes.js';
+import branchRoutes from './modules/branches/branches.routes.js';
+import userRoutes from './modules/users/users.routes.js';
+import patientRoutes from './modules/patients/patients.routes.js';
+import portalRoutes from './modules/portal/portal.routes.js';
+import auditRoutes from './modules/audit/audit.routes.js';
+import doctorRoutes from './modules/doctors/doctors.routes.js';
+import schedulingRoutes from './modules/scheduling/scheduling.routes.js';
+import appointmentRoutes from './modules/appointments/appointments.routes.js';
+import portalApptRoutes from './modules/portal/portal.appointments.routes.js';
+import clinicalRoutes from './modules/clinical/clinical.routes.js';
+import inventoryRoutes from './modules/inventory/inventory.routes.js';
+import billingRoutes from './modules/billing/billing.routes.js';
+import crmRoutes from './modules/crm/crm.routes.js';
+import publicRoutes from './modules/public/public.routes.js';
+import adminRoutes from './modules/admin/admin.routes.js';
+import reportRoutes from './modules/reports/reports.routes.js';
+import callRoutes from './modules/calls/calls.routes.js';
+import exotelWebhooks from './modules/calls/exotel.webhooks.js';
+
+export function buildApp() {
+  const app = express();
+  app.set('trust proxy', 1); // behind Nginx
+  app.disable('x-powered-by');
+
+  app.use(helmet());
+  app.use(
+    cors({
+      origin: (origin, cb) => (!origin || env.corsOrigins.includes(origin) ? cb(null, true) : cb(new Error('CORS blocked'))),
+      credentials: true,
+    })
+  );
+  app.use(compression());
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '200kb' })); // Exotel form callbacks
+  app.use(cookieParser());
+  app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
+
+  app.get('/health', (_req, res) =>
+    res.json({
+      ok: true,
+      mongo: mongoose.connection.readyState === 1,
+      redis: redis.status === 'ready',
+      time: new Date().toISOString(),
+    })
+  );
+
+  const v1 = express.Router();
+  v1.use(apiLimiter);
+  v1.use('/auth', authRoutes);
+  v1.use('/roles', roleRoutes);
+  v1.use('/branches', branchRoutes);
+  v1.use('/staff', userRoutes);
+  v1.use('/patients', patientRoutes);
+  v1.use('/public/exotel', exotelWebhooks);
+  v1.use('/public', publicRoutes);
+  v1.use('/portal/appointments', portalApptRoutes);
+  v1.use('/portal', portalRoutes);
+  v1.use('/doctors', doctorRoutes);
+  v1.use('/scheduling', schedulingRoutes);
+  v1.use('/appointments', appointmentRoutes);
+  v1.use('/clinical', clinicalRoutes);
+  v1.use('/inventory', inventoryRoutes);
+  v1.use('/billing', billingRoutes);
+  v1.use('/crm/calls', callRoutes);
+  v1.use('/crm', crmRoutes);
+  v1.use('/admin', adminRoutes);
+  v1.use('/reports', reportRoutes);
+  v1.use('/audit-logs', auditRoutes);
+  app.use('/api/v1', v1);
+
+  app.use(notFound);
+  app.use(errorHandler);
+  return app;
+}

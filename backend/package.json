@@ -1,0 +1,46 @@
+{
+  "name": "cpf-erp-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "worker": "node src/jobs/worker.js",
+    "seed": "node src/scripts/seed.js",
+    "seed:demo": "node src/scripts/seedDemo.js",
+    "check": "node src/scripts/check.js",
+    "test:unit": "node src/scripts/unit.js",
+    "test:wapp": "node src/scripts/wapp.test.js",
+    "test:exotel": "node src/scripts/exotel.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.30.0",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.13",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.7.0",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^10.3.1",
+    "pdfkit": "^0.20.2",
+    "pino": "^9.4.0",
+    "pino-http": "^10.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7",
+    "pino-pretty": "^11.2.2"
+  }
+}
