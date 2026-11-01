@@ -14,6 +14,12 @@ render() { # template host root out
   echo "  ✔ $4"
 }
 
+# nginx (www-data) must be able to reach the built files even when the repo lives under /root:
+# give "pass-through" (execute only, no listing) on the parent folders and read access to dist/ only.
+p="$APP_DIR/frontend"
+while [ "$p" != "/" ]; do chmod o+x "$p"; p="$(dirname "$p")"; done
+chmod -R o+rX "$APP_DIR/frontend/booking/dist" "$APP_DIR/frontend/console/dist"
+
 echo "nginx sites:"
 render api.conf.template "$API_HOST" "" "$API_HOST"
 render spa.conf.template "$BOOKING_HOST" "$APP_DIR/frontend/booking/dist" "$BOOKING_HOST"

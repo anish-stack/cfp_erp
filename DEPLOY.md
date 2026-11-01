@@ -65,8 +65,8 @@ Redis: bound to 127.0.0.1 with `requirepass`. This app uses **database 3** (`/3`
 
 ## 5. App + backend
 ```bash
-sudo mkdir -p /var/www /var/log/cpf && sudo chown $USER /var/www /var/log/cpf
-git clone <repo> /var/www/cpf-erp && cd /var/www/cpf-erp
+mkdir -p /var/log/cpf
+git clone <repo> /root/cfp_erp && cd /root/cfp_erp
 cp deploy/env/backend.env.production backend/.env && nano backend/.env   # fill every <…>
 cd backend && npm ci --omit=dev && npm run seed:live && cd ..
 pm2 start deploy/ecosystem.config.cjs && pm2 save && pm2 startup
@@ -84,7 +84,7 @@ deploy/build-frontend.sh        # writes .env.production for console + booking f
 sudo deploy/setup-sites.sh
 ```
 Creates `apicfp`, `cfp`, `admincfp`, `cliniccfp`, `crmcfp` sites, the `*.hovermessage.com` catch-all (`zz-wildcard.hovermessage.com`), and `/etc/nginx/conf.d/cloudflare-realip.conf` (real visitor IPs instead of Cloudflare's). It runs `nginx -t` before reloading and never edits your other sites.
-Refresh Cloudflare IP ranges monthly: `sudo crontab -e` → `0 4 1 * * /var/www/cpf-erp/deploy/cloudflare-realip.sh && systemctl reload nginx`
+Refresh Cloudflare IP ranges monthly: `sudo crontab -e` → `0 4 1 * * /root/cfp_erp/deploy/cloudflare-realip.sh && systemctl reload nginx`
 
 Check:
 ```bash
@@ -98,13 +98,13 @@ Then open `https://admincfp.hovermessage.com` and log in with `SEED_ADMIN_EMAIL`
 ## 8. Backups & updates
 ```bash
 crontab -e
-30 2 * * * MONGO_BACKUP_URI='mongodb://admin:<pwd>@127.0.0.1/cpf_erp?authSource=admin' /var/www/cpf-erp/deploy/backup-mongo.sh
+30 2 * * * MONGO_BACKUP_URI='mongodb://admin:<pwd>@127.0.0.1/cpf_erp?authSource=admin' /root/cfp_erp/deploy/backup-mongo.sh
 ```
 Copy `/var/backups/cpf-mongo` off-server (rclone/S3).
 
 Update:
 ```bash
-cd /var/www/cpf-erp && git pull
+cd /root/cfp_erp && git pull
 (cd backend && npm ci --omit=dev && npm run seed:live) && deploy/build-frontend.sh
 pm2 reload cpf-api && pm2 restart cpf-worker
 ```
