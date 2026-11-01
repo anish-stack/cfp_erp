@@ -7,11 +7,14 @@ set -a; source "$DIR/domains.env"; set +a
 
 [ -f "$SSL_CERT" ] && [ -f "$SSL_KEY" ] || { echo "✖ SSL cert/key not found ($SSL_CERT / $SSL_KEY) — see DEPLOY.md step 2"; exit 1; }
 
-render() { # template host root out
+# file names end in .conf — many servers only load "include /etc/nginx/sites-enabled/*.conf;"
+render() { # template host root name
+  local f="$4.conf"
+  rm -f "/etc/nginx/sites-enabled/$4" "/etc/nginx/sites-available/$4"   # old names without .conf
   sed -e "s|__HOST__|$2|g" -e "s|__ROOT__|$3|g" -e "s|__PORT__|$API_PORT|g" -e "s|__ZONE__|$ZONE|g" \
-      -e "s|__SSL_CERT__|$SSL_CERT|g" -e "s|__SSL_KEY__|$SSL_KEY|g" "$DIR/nginx/$1" > "/etc/nginx/sites-available/$4"
-  ln -sf "/etc/nginx/sites-available/$4" "/etc/nginx/sites-enabled/$4"
-  echo "  ✔ $4"
+      -e "s|__SSL_CERT__|$SSL_CERT|g" -e "s|__SSL_KEY__|$SSL_KEY|g" "$DIR/nginx/$1" > "/etc/nginx/sites-available/$f"
+  ln -sf "/etc/nginx/sites-available/$f" "/etc/nginx/sites-enabled/$f"
+  echo "  ✔ $f"
 }
 
 # nginx (www-data) must be able to reach the built files even when the repo lives under /root:
@@ -29,9 +32,11 @@ done
 if [ "${WILDCARD_CATCHALL:-1}" = "1" ]; then
   render wildcard.conf.template "*.$ZONE" "" "zz-wildcard.$ZONE"
 else
-  rm -f "/etc/nginx/sites-enabled/zz-wildcard.$ZONE"
+  rm -f "/etc/nginx/sites-enabled/zz-wildcard.$ZONE" "/etc/nginx/sites-enabled/zz-wildcard.$ZONE.conf"
 fi
 
 bash "$DIR/cloudflare-realip.sh"
-nginx -t && systemctl reload nginx
+# nginx -s reload works even when systemctl fails ("Too many open files" on busy servers)
+nginx -t && (nginx -s reload || systemctl reload nginx)
+echo "Loaded: $(nginx -T 2>/dev/null | grep -c "server_name .*$ZONE") server blocks for $ZONE"
 echo "Done. Hosts: https://$API_HOST  https://$BOOKING_HOST  https://$ADMIN_HOST  https://$CLINIC_HOST  https://$CRM_HOST"
