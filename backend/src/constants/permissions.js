@@ -11,6 +11,7 @@ export const MODULES = {
   medical_records: { label: 'Medical Records', group: 'Clinical' },
   appointments: { label: 'Appointments', group: 'Clinical' },
   walkins: { label: 'Walk-ins', group: 'Clinical' },
+  ipd: { label: 'IPD / Admissions & Beds', group: 'IPD' },
   slots: { label: 'Slot Management', group: 'Clinical' },
   billing: { label: 'Billing & Invoices', group: 'Finance' },
   pos: { label: 'POS', group: 'Finance' },
@@ -24,6 +25,7 @@ export const MODULES = {
   campaigns: { label: 'Campaigns', group: 'CRM' },
   sales: { label: 'Sales & Targets', group: 'CRM' },
   cms: { label: 'CMS & Forms', group: 'CRM' },
+  marketing: { label: 'Marketing (bulk WhatsApp)', group: 'CRM' },
   reports: { label: 'Reports', group: 'Insights' },
   notifications: { label: 'Notifications', group: 'System' },
   settings: { label: 'Settings', group: 'System' },
@@ -46,16 +48,16 @@ export const DEFAULT_ROLES = [
     slug: 'branch_admin', name: 'Branch Admin', scope: 'branch',
     permissions: [
       v('dashboard'), ...crud('staff'), ...crud('doctors'), ...all('patients'), ...all('medical_records'),
-      ...all('appointments'), ...all('walkins'), ...all('slots'), ...all('billing'), ...all('pos'),
+      ...all('appointments'), ...all('walkins'), ...all('slots'), ...all('ipd'), ...all('billing'), ...all('pos'),
       ...all('expenses'), ...all('inventory'), ...all('purchases'), ...crud('suppliers'),
       v('reports'), 'reports.export', v('leads'), v('notifications'), v('audit_logs'),
-      'branches.view', 'branches.manage_settings',
+      'branches.view', 'branches.manage_settings', v('marketing'), 'marketing.create',
     ],
   },
   {
     slug: 'branch_manager', name: 'Branch Manager', scope: 'branch',
     permissions: [
-      v('dashboard'), v('staff'), v('doctors'), ...crud('patients'), ...crud('appointments'), ...crud('walkins'),
+      v('dashboard'), v('staff'), v('doctors'), ...crud('patients'), ...crud('appointments'), ...crud('walkins'), ...all('ipd'),
       ...crud('slots'), ...crud('billing'), ...crud('pos'), ...crud('expenses'), ...crud('inventory'),
       ...crud('purchases'), v('suppliers'), v('reports'), 'branches.view',
     ],
@@ -64,7 +66,7 @@ export const DEFAULT_ROLES = [
     slug: 'receptionist', name: 'Receptionist', scope: 'branch',
     permissions: [
       v('dashboard'), v('doctors'), v('patients'), 'patients.create', 'patients.edit',
-      ...crud('appointments'), ...crud('walkins'), v('slots'), v('billing'), 'billing.create',
+      ...crud('appointments'), ...crud('walkins'), v('slots'), v('ipd'), 'ipd.create', 'ipd.edit', v('billing'), 'billing.create',
       v('pos'), 'pos.create', v('followups'), 'followups.create', 'followups.edit',
     ],
   },
@@ -72,13 +74,13 @@ export const DEFAULT_ROLES = [
     slug: 'doctor', name: 'Doctor', scope: 'branch',
     permissions: [
       v('dashboard'), v('patients'), 'patients.edit', ...crud('medical_records'),
-      v('appointments'), 'appointments.edit', v('slots'), v('followups'), 'followups.create',
+      v('appointments'), 'appointments.edit', v('slots'), v('followups'), 'followups.create', v('ipd'), 'ipd.create', 'ipd.edit',
     ],
   },
   {
     slug: 'accountant', name: 'Accountant', scope: 'branch',
     permissions: [
-      v('dashboard'), v('patients'), ...all('billing'), v('pos'), ...all('expenses'),
+      v('dashboard'), v('patients'), ...all('billing'), v('pos'), ...all('expenses'), v('ipd'), 'ipd.edit',
       v('purchases'), v('suppliers'), v('reports'), 'reports.export',
     ],
   },
@@ -86,14 +88,18 @@ export const DEFAULT_ROLES = [
     slug: 'pharmacist', name: 'Pharmacist', scope: 'branch',
     permissions: [
       v('dashboard'), v('patients'), ...all('pos'), ...crud('inventory'), 'inventory.import', 'inventory.export',
-      ...crud('purchases'), ...crud('suppliers'), v('billing'), 'billing.create',
+      ...crud('purchases'), ...crud('suppliers'), v('billing'), 'billing.create', v('ipd'), 'ipd.edit',
     ],
+  },
+  {
+    slug: 'nurse', name: 'Nurse / Ward staff', scope: 'branch',
+    permissions: [v('dashboard'), v('patients'), v('doctors'), v('appointments'), v('medical_records'), v('ipd'), 'ipd.create', 'ipd.edit'],
   },
   {
     slug: 'sales_manager', name: 'Sales Manager', scope: 'global',
     permissions: [
       v('dashboard'), ...all('leads'), ...all('followups'), ...all('tasks'), ...all('campaigns'),
-      ...all('sales'), v('cms'), v('reports'), 'reports.export', v('appointments'), 'appointments.create',
+      ...all('sales'), v('cms'), ...all('marketing'), v('reports'), 'reports.export', v('appointments'), 'appointments.create',
     ],
   },
   {
@@ -106,7 +112,7 @@ export const DEFAULT_ROLES = [
   {
     slug: 'marketing_manager', name: 'Marketing Manager', scope: 'global',
     permissions: [
-      v('dashboard'), v('leads'), 'leads.import', 'leads.export', ...all('campaigns'), ...all('cms'),
+      v('dashboard'), v('leads'), 'leads.import', 'leads.export', ...all('campaigns'), ...all('cms'), ...all('marketing'),
       v('reports'), 'reports.export',
     ],
   },

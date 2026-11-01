@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Phone, MessageCircle, StickyNote, UserRoundCheck, ListPlus, Trash2 } from 'lucide-react';
+import { Phone, MessageCircle, StickyNote, UserRoundCheck, ListPlus, Trash2, Send, ExternalLink } from 'lucide-react';
+import { toast } from 'sonner';
+import { usePublicClinic } from '@/hooks/queries';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +18,16 @@ import { SlotPicker } from '@/components/clinic/SlotPicker';
 import { useGet, useAction, useStages, useStaffList, useDoctors } from '@/hooks/queries';
 import { post, patch, del } from '@/lib/api';
 import { useCan } from '@/store/auth';
-import { fmtDateTime, titleCase, todayIST, addDays } from '@/lib/utils';
+import { fmtDateTime, titleCase, todayIST, addDays, errMsg } from '@/lib/utils';
+
+const BOOKING_URL = import.meta.env.VITE_BOOKING_URL || 'https://appointment.centreforpilesandfistula.com';
+const QUICK = (first, clinic) => [
+  ['Greeting', `Hello ${first} 🙏, this is from ${clinic}. Thank you for your enquiry. When is a good time to talk about your treatment?`],
+  ['Book link', `Hello ${first}, you can book your free consultation here: ${BOOKING_URL} — pick any branch & time that suits you.`],
+  ['Cost info', `Hello ${first}, treatment cost depends on the condition and the procedure. After a free check-up the doctor will share an exact estimate. Insurance & cashless are available.`],
+  ['Location', `Hello ${first}, our clinics: Rohini, Paschim Vihar, Indirapuram, Tilak Nagar and Dwarka. Tell me your area and I'll share the nearest branch location.`],
+  ['Follow-up', `Hello ${first}, just checking in — would you like me to book your consultation for this week?`],
+];
 
 const toLocal = (d) => (d ? new Date(new Date(d).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '');
 const ICON = { call: Phone, whatsapp: MessageCircle, note: StickyNote };
@@ -90,6 +101,12 @@ export default function LeadDetail() {
   const addTask = useAction(() => post('/crm/tasks', { title: task.title, lead: id, dueAt: task.dueAt ? new Date(task.dueAt).toISOString() : undefined }), { success: 'Task added', invalidate: [...inv, '/crm/tasks'], onSuccess: () => setTask({ title: '', dueAt: '' }) });
   const remove = useAction(() => del(`/crm/leads/${id}`), { success: 'Lead removed', invalidate: inv, onSuccess: () => nav('/leads') });
   const calls = useGet(['/crm/calls', 'lead', id], '/crm/calls', { lead: id, limit: 50 }, { refetchInterval: 15_000 });
+  const { data: clinicInfo } = usePublicClinic();
+  const sendWa = useAction(() => post(`/crm/leads/${id}/whatsapp`, { message: act.text }), {
+    invalidate: inv,
+    success: (r) => (r.status === 'sent' ? 'WhatsApp sent' : `Not sent: ${r.error || r.status}`),
+    onSuccess: () => setAct({ ...act, text: '' }),
+  });
 
   if (isLoading || !data) return <Skeleton className="h-96 w-full" />;
   const { lead: l, activities, tasks, duplicate } = data;
@@ -103,7 +120,8 @@ export default function LeadDetail() {
     <div className="space-y-4">
       <PageHeader title={l.name} description={`${l.phone}${l.email ? ` · ${l.email}` : ''} · created ${fmtDateTime(l.createdAt)}${l.createdBy ? ` by ${l.createdBy.name}` : ''}`} actions={<>
         {can('leads.edit') ? <CallButton lead={l} size="default" onPlaced={() => setTimeout(() => calls.refetch(), 3000)} /> : <Button variant="outline" asChild><a href={`tel:${l.phone}`}><Phone /> Call</a></Button>}
-        <Button variant="outline" asChild><a href={`https://wa.me/91${l.phone}`} target="_blank" rel="noreferrer"><MessageCircle /> WhatsApp</a></Button>
+        {can('leads.edit') && <Button variant="outline" onClick={() => { setAct({ ...act, type: 'whatsapp' }); setTimeout(() => document.getElementById('lead-composer')?.focus(), 50); }}><MessageCircle /> WhatsApp</Button>}
+        <Button variant="ghost" size="icon" title="Open in WhatsApp app" asChild><a href={`https://wa.me/91${l.phone}`} target="_blank" rel="noreferrer"><ExternalLink /></a></Button>
         {can('leads.edit') && !l.convertedPatient && <Button onClick={() => setDlg('convert')}><UserRoundCheck /> Convert</Button>}
         {can('leads.delete') && <Button variant="ghost" size="icon" onClick={() => setDlg('delete')}><Trash2 /></Button>}
       </>} />
@@ -190,11 +208,19 @@ export default function LeadDetail() {
                     <Input type="number" placeholder="Duration (sec)" value={act.durationSec} onChange={(e) => setAct({ ...act, durationSec: e.target.value })} />
                   </div>
                 )}
-                <Textarea rows={2} placeholder={act.type === 'note' ? 'Note…' : 'Summary…'} value={act.text} onChange={(e) => setAct({ ...act, text: e.target.value })} />
+                {act.type === 'whatsapp' && (
+                  <div className="flex flex-wrap gap-1.5">{QUICK((l.name || '').split(' ')[0], clinicInfo?.name || 'our clinic').map(([k, t]) => <button key={k} type="button" onClick={() => setAct({ ...act, text: t })} className="rounded-full border px-2.5 py-0.5 text-xs hover:border-primary hover:text-primary">{k}</button>)}</div>
+                )}
+                <Textarea id="lead-composer" rows={act.type === 'whatsapp' ? 4 : 2} placeholder={act.type === 'note' ? 'Note…' : act.type === 'whatsapp' ? 'Type the WhatsApp message to send…' : 'Summary…'} value={act.text} onChange={(e) => setAct({ ...act, text: e.target.value })} />
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs text-muted-foreground">Next follow-up</span>
                   <Input type="datetime-local" className="w-auto" value={act.next} onChange={(e) => setAct({ ...act, next: e.target.value })} />
-                  <Button className="ml-auto" size="sm" disabled={act.type === 'note' && !act.text} loading={log.isPending} onClick={() => log.mutate()}>Log</Button>
+                  {act.type === 'whatsapp' ? (
+                    <div className="ml-auto flex gap-2">
+                      <Button size="sm" variant="outline" disabled={!act.text} loading={log.isPending} onClick={() => log.mutate()} title="Only record that you messaged (e.g. from your phone)">Log only</Button>
+                      <Button size="sm" disabled={!act.text.trim()} loading={sendWa.isPending} onClick={() => sendWa.mutate()}><Send /> Send WhatsApp</Button>
+                    </div>
+                  ) : <Button className="ml-auto" size="sm" disabled={act.type === 'note' && !act.text} loading={log.isPending} onClick={() => log.mutate()}>Log</Button>}
                 </div>
               </div>
             )}
@@ -208,7 +234,8 @@ export default function LeadDetail() {
                       <span className="font-medium">{titleCase(a.type)}</span>
                       {a.call?.outcome && <Badge variant="outline" className="ml-2">{titleCase(a.call.outcome)}{a.call.durationSec ? ` · ${Math.round(a.call.durationSec / 60)}m` : ''}</Badge>}
                     </p>
-                    {a.text && <p className="text-sm text-foreground/80">{a.text}</p>}
+                    {a.meta?.status && <Badge variant={a.meta.status === 'sent' ? 'success' : a.meta.status === 'failed' ? 'danger' : 'warning'} className="ml-1">{a.meta.status === 'sent' ? 'Sent from panel' : `${a.meta.status}${a.meta.error ? `: ${a.meta.error}` : ''}`}</Badge>}
+                    {a.text && <p className="whitespace-pre-line text-sm text-foreground/80">{a.text}</p>}
                     <p className="text-xs text-muted-foreground">{fmtDateTime(a.createdAt)} · {a.by?.name || 'system'}</p>
                   </li>
                 );

@@ -11,6 +11,8 @@ import { nextDocNo } from '../../utils/counter.js';
 import { computeLine, computeTotals, statusFor, r2 } from '../../utils/invoiceMath.js';
 import * as stock from '../inventory/stock.service.js';
 import * as notify from '../../services/notify.js';
+import { Coupon, LoyaltyTxn } from '../../models/Loyalty.js';
+import * as promo from './promo.service.js';
 
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
 
@@ -48,7 +50,8 @@ function inferType(lines, products) {
  * data: { branch, patient?, customer?, appointment?, doctor?, items[{ product?, description?, qty, rate?, discountPct, gstRate? }],
  *         payments[{ mode, amount, reference }], useAdvance, notes, source, type? }
  */
-export async function createInvoice(data, user) {
+/** price a bill without saving it (POS live preview + createInvoice) */
+export async function priceInvoice(data) {
   const settings = await getSettings();
   const taxInclusive = settings.billing?.taxInclusive !== false;
   const gstOn = settings.billing?.gstEnabled !== false;
@@ -71,7 +74,47 @@ export async function createInvoice(data, user) {
     return { kind, product: p?._id, description: i.description || p?.name, hsn: p?.hsn, qty: i.qty, rate, discountPct: i.discountPct || 0, gstRate, ...calc };
   });
   if (lines.some((l) => !l.description)) throw ApiError.badRequest('Description required for custom lines');
+
+  // ---- bill-level discounts: coupon, then loyalty points — spread over the lines before GST
+  const patientDoc = data.patient ? await Patient.findById(data.patient).select('mobile').lean() : null;
+  const mobile = promo.mobileKey(patientDoc?.mobile || data.customer?.phone);
+  const loyaltyCfg = settings.loyalty || {};
+  let couponQ = null;
+  let redeemPts = 0;
+  let redeemValue = 0;
+  if (data.couponCode || data.redeemPoints) {
+    const netOf = (ls) => ls.map((l) => ({ kind: l.kind, net: r2(l.gross - l.discountAmt) }));
+    const base = netOf(lines);
+    const extra = new Array(lines.length).fill(0);
+    if (data.couponCode) {
+      couponQ = await promo.quoteCoupon(data.couponCode, { lines: base, mobile, branch: data.branch });
+      promo.spread(couponQ.discount, base, couponQ.eligibleIdx).forEach((v, i) => { extra[i] += v; });
+    }
+    if (data.redeemPoints > 0) {
+      if (!loyaltyCfg.enabled) throw ApiError.badRequest('Loyalty points are switched off');
+      if (!mobile) throw ApiError.badRequest('Customer mobile number required to redeem points');
+      const { balance } = await promo.loyaltyBalance(mobile);
+      const after = base.map((l, i) => ({ ...l, net: r2(l.net - extra[i]) }));
+      const net = after.reduce((a, l) => a + l.net, 0);
+      const max = promo.maxRedeemable(loyaltyCfg, balance, net);
+      if (balance < (loyaltyCfg.minRedeem || 0)) throw ApiError.badRequest(`Minimum ${loyaltyCfg.minRedeem} points needed to redeem (balance ${balance})`);
+      redeemPts = Math.min(Math.floor(data.redeemPoints), max);
+      redeemValue = r2(redeemPts * (loyaltyCfg.pointValue || 1));
+      promo.spread(redeemValue, after, after.map((_, i) => i)).forEach((v, i) => { extra[i] += v; });
+    }
+    lines.forEach((l, i) => {
+      if (!extra[i]) return;
+      Object.assign(l, computeLine({ qty: l.qty, rate: l.rate, discountPct: l.discountPct, gstRate: l.gstRate, extraDiscount: extra[i] }, taxInclusive));
+    });
+  }
   const totals = computeTotals(lines);
+  const earnBase = loyaltyCfg.earnOnServices === false ? lines.filter((l) => l.kind === 'product').reduce((a, l) => a + l.total, 0) : totals.grandTotal;
+  const earnPts = mobile ? promo.pointsFor(loyaltyCfg, earnBase) : 0;
+  return { settings, taxInclusive, branch, products, lines, totals, couponQ, redeemPts, redeemValue, earnPts, mobile, loyaltyCfg };
+}
+
+export async function createInvoice(data, user) {
+  const { branch, products, lines, totals, couponQ, redeemPts, redeemValue, earnPts, mobile, loyaltyCfg, taxInclusive } = await priceInvoice(data);
   if (totals.grandTotal <= 0 && lines.length) {
     // allow zero-value invoices (free consultation) but no payments
     if ((data.payments || []).length) throw ApiError.badRequest('Nothing to pay on a zero invoice');
@@ -86,6 +129,7 @@ export async function createInvoice(data, user) {
         patient: data.patient,
         customer: data.customer,
         appointment: data.appointment,
+        admission: data.admission,
         doctor: data.doctor,
         source: data.source || 'billing',
         type: data.type || inferType(lines, products),
@@ -95,10 +139,32 @@ export async function createInvoice(data, user) {
         paid: 0,
         balance: totals.grandTotal,
         notes: data.notes,
+        coupon: couponQ ? { code: couponQ.coupon.code, coupon: couponQ.coupon._id, discount: couponQ.discount } : undefined,
+        loyalty: mobile ? { mobile, redeemed: redeemPts, redeemValue, earned: earnPts } : undefined,
         createdBy: user._id,
       }],
       { session }
     );
+
+    // coupon usage (atomic — two tills can't over-use a limited coupon)
+    if (couponQ) {
+      const u = await Coupon.updateOne(
+        { _id: couponQ.coupon._id, $or: [{ usageLimit: null }, { usageLimit: { $exists: false } }, { usageLimit: 0 }, { $expr: { $lt: ['$used', '$usageLimit'] } }] },
+        { $inc: { used: 1 } },
+        { session }
+      );
+      if (!u.modifiedCount) throw ApiError.badRequest('This coupon has been fully used');
+    }
+    // loyalty: redeem, then earn on this bill
+    if (redeemPts > 0) {
+      const { balance } = await promo.loyaltyBalance(mobile, session);
+      if (balance < redeemPts) throw ApiError.badRequest('Not enough loyalty points');
+      await LoyaltyTxn.create([{ mobile, patient: data.patient, type: 'redeem', points: -redeemPts, invoice: inv._id, invoiceNo, branch: inv.branch, by: user._id }], { session });
+    }
+    if (earnPts > 0) {
+      const exp = loyaltyCfg.expiryDays > 0 ? new Date(Date.now() + loyaltyCfg.expiryDays * 864e5) : undefined;
+      await LoyaltyTxn.create([{ mobile, patient: data.patient, type: 'earn', points: earnPts, expiresAt: exp, invoice: inv._id, invoiceNo, branch: inv.branch, by: user._id }], { session });
+    }
 
     // stock out
     for (const line of inv.items) {
@@ -158,7 +224,8 @@ export async function addPayment(invoiceId, { mode, amount, reference, notes, us
     await inv.save({ session });
     return { invoice: inv, payment: p };
   }).then((out) => {
-    notify.enqueue('payment.received', { invoiceId: String(out.invoice._id), paymentId: String(out.payment._id) });
+    // insurer settlements are not receipted to the patient
+    if (out.payment.mode !== 'insurance') notify.enqueue('payment.received', { invoiceId: String(out.invoice._id), paymentId: String(out.payment._id) });
     return out;
   });
 }
@@ -264,6 +331,15 @@ export async function cancelInvoice(invoiceId, reason, user) {
       }
       line.returnedQty = line.qty;
     }
+    // give back redeemed points, take back earned points, free the coupon
+    const L = inv.loyalty || {};
+    if (L.mobile && (L.redeemed || L.earned)) {
+      const rows = [];
+      if (L.redeemed) rows.push({ mobile: L.mobile, patient: inv.patient, type: 'reverse', points: L.redeemed, invoice: inv._id, invoiceNo: inv.invoiceNo, branch: inv.branch, note: 'Bill cancelled — points returned', by: user._id });
+      if (L.earned) rows.push({ mobile: L.mobile, patient: inv.patient, type: 'reverse', points: -L.earned, invoice: inv._id, invoiceNo: inv.invoiceNo, branch: inv.branch, note: 'Bill cancelled — earned points removed', by: user._id });
+      await LoyaltyTxn.create(rows, { session, ordered: true });
+    }
+    if (inv.coupon?.coupon) await Coupon.updateOne({ _id: inv.coupon.coupon, used: { $gt: 0 } }, { $inc: { used: -1 } }, { session });
     inv.status = 'cancelled';
     inv.cancelReason = reason;
     inv.balance = 0;

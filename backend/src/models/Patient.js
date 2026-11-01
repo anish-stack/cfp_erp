@@ -15,6 +15,7 @@ const schema = new mongoose.Schema(
     address: { line1: String, city: String, state: String, pincode: String },
     bloodGroup: { type: String, enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', null] },
     allergies: [String],
+    marketingOptOut: { type: Boolean, default: false }, // excluded from bulk WhatsApp campaigns
     emergencyContact: { name: String, phone: String, relation: String },
     registeredBranch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
     branchesVisited: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }],

@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Monitor, Tablet, Smartphone, Save, Eye, EyeOff, Copy, Trash2, ArrowUp, ArrowDown, GripVertical, Plus, Undo2, Redo2,
-  LayoutTemplate, Palette, ImagePlus, X, ChevronDown, ChevronRight, ExternalLink, Film, Sparkles, Wand2,
+  LayoutTemplate, Palette, Gift, MessageSquare, Phone as PhoneIcon, ImagePlus, X, ChevronDown, ChevronRight, ExternalLink, Film, Sparkles, Wand2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/input';
@@ -13,12 +13,14 @@ import { Switch } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Field } from '@/components/common/Field';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { get, patch, post } from '@/lib/api';
 import { useCan } from '@/store/auth';
 import { cn, errMsg } from '@/lib/utils';
 import { Block, ICONS, designVars, fontHref } from '@/components/landing/LandingRenderer';
 import { BLOCK_DEFS, LINK_PLACEHOLDER, newId, clone } from '@/components/landing/blockDefs';
 import { MediaPicker } from '@/components/landing/MediaPicker';
+import LandingWidgets from '@/components/landing/Widgets';
 
 const BOOKING_URL = import.meta.env.VITE_BOOKING_URL || 'https://appointment.centreforpilesandfistula.com';
 const DEVICES = { desktop: { w: 1280, icon: Monitor }, tablet: { w: 820, icon: Tablet }, mobile: { w: 390, icon: Smartphone } };
@@ -93,6 +95,74 @@ function IconInput({ value, onChange }) {
       {Object.entries(ICONS).map(([k, Ic]) => (
         <button key={k} type="button" title={k} onClick={() => onChange(k)} className={cn('grid h-8 place-items-center rounded border', value === k ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-accent')}><Ic className="h-4 w-4" /></button>
       ))}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ page widgets: floating buttons, popup, spin wheel
+function WidgetsPanel({ widgets = {}, onChange, onPreview }) {
+  const { data: wheels = [] } = useQuery({ queryKey: ['wheels'], queryFn: () => get('/crm/wheels'), staleTime: 60_000 });
+  const set = (group, k, v) => onChange({ ...widgets, [group]: { ...(widgets[group] || {}), [k]: v } });
+  const num = (v) => (v === '' ? undefined : Math.max(0, parseInt(v, 10) || 0));
+  const fl = widgets.floating || {};
+  const pp = widgets.popup || {};
+  const wh = widgets.wheel || {};
+  const Head = ({ icon: Ic, title, group, on }) => (
+    <div className="flex items-center justify-between">
+      <p className="flex items-center gap-2 text-xs font-semibold"><Ic className="h-3.5 w-3.5" />{title}</p>
+      <Switch checked={!!on} onCheckedChange={(v) => set(group, 'enabled', v)} />
+    </div>
+  );
+  return (
+    <div className="space-y-3 border-t pt-3">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">Widgets</p>
+      <div className="space-y-2 rounded-lg border p-2.5">
+        <Head icon={PhoneIcon} title="WhatsApp & Call buttons" group="floating" on={fl.enabled} />
+        {fl.enabled && (
+          <div className="space-y-2">
+            <Field label="WhatsApp number"><Input inputMode="numeric" maxLength={10} value={fl.whatsapp || ''} onChange={(e) => set('floating', 'whatsapp', e.target.value.replace(/\D/g, ''))} placeholder="10-digit" /></Field>
+            <Field label="Pre-filled WhatsApp message"><Input maxLength={300} value={fl.message || ''} onChange={(e) => set('floating', 'message', e.target.value)} placeholder="Hi, I want to know about…" /></Field>
+            <Field label="Call number"><Input inputMode="numeric" maxLength={10} value={fl.phone || ''} onChange={(e) => set('floating', 'phone', e.target.value.replace(/\D/g, ''))} placeholder="10-digit" /></Field>
+            <p className="text-[11px] text-muted-foreground">Fixed at the bottom-right of the page. Leave a number empty to hide that button.</p>
+          </div>
+        )}
+      </div>
+      <div className="space-y-2 rounded-lg border p-2.5">
+        <Head icon={MessageSquare} title="Contact popup" group="popup" on={pp.enabled} />
+        {pp.enabled && (
+          <div className="space-y-2">
+            <Field label="Title"><Input maxLength={120} value={pp.title || ''} onChange={(e) => set('popup', 'title', e.target.value)} placeholder="Get a free call back" /></Field>
+            <Field label="Subtitle"><Textarea rows={2} maxLength={300} value={pp.subtitle || ''} onChange={(e) => set('popup', 'subtitle', e.target.value)} /></Field>
+            <Field label="Image (optional)"><ImageInput value={pp.image} onChange={(v) => set('popup', 'image', v)} /></Field>
+            <Field label="Button text"><Input maxLength={40} value={pp.buttonText || ''} onChange={(e) => set('popup', 'buttonText', e.target.value)} placeholder="Request call back" /></Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Show when"><Select value={pp.trigger || 'delay'} onChange={(e) => set('popup', 'trigger', e.target.value)}><option value="delay">After delay</option><option value="exit">Leaving page</option><option value="scroll">On scroll</option></Select></Field>
+              {pp.trigger === 'scroll'
+                ? <Field label="Scroll %"><Input type="number" min={5} max={100} value={pp.scrollPct ?? 50} onChange={(e) => set('popup', 'scrollPct', Math.min(100, Math.max(5, num(e.target.value) || 50)))} /></Field>
+                : <Field label="Delay (sec)"><Input type="number" min={0} max={300} value={pp.delaySec ?? 15} onChange={(e) => set('popup', 'delaySec', Math.min(300, num(e.target.value) ?? 15))} /></Field>}
+            </div>
+            <Field label="Show again after (days)"><Input type="number" min={0} max={90} value={pp.repeatDays ?? 3} onChange={(e) => set('popup', 'repeatDays', Math.min(90, num(e.target.value) ?? 3))} /></Field>
+            <p className="text-[11px] text-muted-foreground">Uses this page's form fields. "Leaving page" falls back to a 25-second delay on phones.</p>
+            <Button size="sm" variant="outline" className="w-full" onClick={() => onPreview('popup')}>Preview popup</Button>
+          </div>
+        )}
+      </div>
+      <div className="space-y-2 rounded-lg border p-2.5">
+        <Head icon={Gift} title="Spin & Win wheel" group="wheel" on={wh.enabled} />
+        {wh.enabled && (
+          <div className="space-y-2">
+            <Field label="Wheel"><Select value={wh.wheelId || ''} onChange={(e) => set('wheel', 'wheelId', e.target.value)}><option value="">Select a wheel</option>{wheels.map((w) => <option key={w._id} value={w._id}>{w.name}{w.live ? '' : ' (off)'}</option>)}</Select></Field>
+            {!wheels.length && <p className="text-[11px] text-amber-600">No wheels yet — create one in CRM → Spin Wheels.</p>}
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Open"><Select value={wh.trigger || 'delay'} onChange={(e) => set('wheel', 'trigger', e.target.value)}><option value="delay">After delay</option><option value="exit">Leaving page</option><option value="button">Only on click</option></Select></Field>
+              {wh.trigger !== 'button' && <Field label="Delay (sec)"><Input type="number" min={0} max={300} value={wh.delaySec ?? 8} onChange={(e) => set('wheel', 'delaySec', Math.min(300, num(e.target.value) ?? 8))} /></Field>}
+            </div>
+            <Field label="Tab button text"><Input maxLength={30} value={wh.tabText || ''} onChange={(e) => set('wheel', 'tabText', e.target.value)} placeholder="Spin & Win" /></Field>
+            <p className="text-[11px] text-muted-foreground">A "Spin & Win" button stays at the bottom-left. Every spin is tracked in Spin Wheels.</p>
+            <Button size="sm" variant="outline" className="w-full" disabled={!wh.wheelId} onClick={() => onPreview('wheel')}>Preview wheel (test spin, not saved)</Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -198,6 +268,7 @@ export default function PageDesigner() {
   const formQ = useQuery({ queryKey: ['form-design', id], queryFn: () => get(`/crm/forms/${id}`), refetchOnWindowFocus: false });
   const [blocks, setBlocksRaw] = useState(null);
   const [design, setDesign] = useState(DEFAULT_DESIGN);
+  const [widgetSignal, setWidgetSignal] = useState(null);
   const [page, setPage] = useState({});
   const [sel, setSel] = useState(null);
   const [device, setDevice] = useState('desktop');
@@ -265,10 +336,13 @@ export default function PageDesigner() {
     return a;
   });
 
-  const loadTemplate = async () => {
-    if (blocks?.length && !window.confirm('Replace the current page with the CPF template?')) return;
+  const [tplOpen, setTplOpen] = useState(false);
+  const loadTemplate = async (variant) => {
+    if (typeof variant !== 'string') return setTplOpen(true);
+    if (blocks?.length && !window.confirm('Replace the current page with this template?')) return;
+    setTplOpen(false);
     try {
-      const t = await get('/crm/landing-template');
+      const t = await get('/crm/landing-template', { variant });
       setBlocks(t.blocks);
       setDesign((d) => ({ ...d, ...t.design }));
       setSel(null);
@@ -340,6 +414,19 @@ export default function PageDesigner() {
         {can('cms.edit') && <Button size="sm" loading={saving} disabled={!dirty} onClick={save}><Save /> Save</Button>}
       </div>
 
+      <Dialog open={tplOpen} onOpenChange={setTplOpen}>
+        <DialogContent title="Choose a page layout" size="lg">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[['classic', 'Classic', 'Red split hero, booking strip, success stories, services grid, conditions, treatments, CTA band', 'from-red-600 to-red-400'], ['modern', 'Modern gradient', 'Dark→brand gradient hero, numbers, call-back card, timeline steps, package pricing, doctors, FAQ', 'from-slate-900 to-red-600'], ['minimal', 'Minimal clean', 'Centred hero, form card, conditions grid, numbered steps, FAQ — fast & simple', 'from-white to-slate-100']].map(([k, n, d, g]) => (
+              <button key={k} type="button" onClick={() => loadTemplate(k)} className="overflow-hidden rounded-lg border text-left transition hover:border-primary hover:shadow-md">
+                <div className={cn('h-24 bg-gradient-to-br', g)}><div className="space-y-1.5 p-3"><div className={cn('h-2 w-3/4 rounded', k === 'minimal' ? 'bg-slate-300' : 'bg-white/80')} /><div className={cn('h-2 w-1/2 rounded', k === 'minimal' ? 'bg-slate-200' : 'bg-white/50')} /><div className={cn('mt-3 h-4 w-20 rounded', k === 'minimal' ? 'bg-red-500' : 'bg-white')} /></div></div>
+                <div className="p-3"><p className="font-semibold">{n}</p><p className="text-xs text-muted-foreground">{d}</p></div>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">All text, images and colours stay editable. Replaces the current blocks (Ctrl+Z to undo).</p>
+        </DialogContent>
+      </Dialog>
       <div className="flex min-h-0 flex-1">
         {/* left: palette / layers */}
         <aside className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex">
@@ -387,7 +474,7 @@ export default function PageDesigner() {
               onClickCapture={(e) => { if (e.target.closest('a,button[type="submit"]') && !e.target.closest('[data-lp-tool]')) e.preventDefault(); }}>
               {blocks.length === 0 && (
                 <div className="m-6 grid min-h-[60vh] place-items-center rounded-xl border-2 border-dashed border-slate-300 p-8 text-center text-slate-500" onDragOver={(e) => { e.preventDefault(); setDrop(0); }} onDrop={onDrop}>
-                  <div><p className="text-lg font-semibold text-slate-700">Empty page</p><p className="mt-1 text-sm">Drag blocks here from the left, or start from the ready-made template.</p><button type="button" data-lp-tool onClick={loadTemplate} className="mt-4 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white">Use CPF template</button></div>
+                  <div><p className="text-lg font-semibold text-slate-700">Empty page</p><p className="mt-1 text-sm">Drag blocks here from the left, or start from the ready-made template.</p><button type="button" data-lp-tool onClick={loadTemplate} className="mt-4 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white">Choose a layout</button></div>
                 </div>
               )}
               {blocks.map((b, i) => (
@@ -416,6 +503,10 @@ export default function PageDesigner() {
               ))}
               <Indicator show={drop === blocks.length && blocks.length > 0} />
               {blocks.length > 0 && <div className="h-24" onDragOver={(e) => { if (drag.current) { e.preventDefault(); setDrop(blocks.length); } }} onDrop={onDrop} />}
+              <div data-lp-tool>
+                <LandingWidgets preview widgets={design.widgets || {}} renderForm={renderForm} openSignal={widgetSignal} formSlug={formQ.data?.slug}
+                  wheelApi={{ load: (wid) => get(`/crm/wheels/${wid}`) }} />
+              </div>
             </div>
           </Frame>
         </main>
@@ -451,6 +542,7 @@ export default function PageDesigner() {
                 ))}
               </div>
               <Field label="Font"><Select value={design.font} onChange={(e) => { setDesign((d) => ({ ...d, font: e.target.value })); setDirty(true); }}>{FONTS.map((x) => <option key={x}>{x}</option>)}</Select></Field>
+              <WidgetsPanel widgets={design.widgets || {}} onChange={(w) => { setDesign((d) => ({ ...d, widgets: w })); setDirty(true); }} onPreview={(which) => setWidgetSignal({ which, n: Date.now() })} />
               <div className="space-y-2 border-t pt-3">
                 <p className="text-xs font-semibold uppercase text-muted-foreground">SEO</p>
                 <Field label="Page title"><Input value={page.seoTitle || ''} maxLength={120} onChange={(e) => { setPage((p) => ({ ...p, seoTitle: e.target.value })); setDirty(true); }} /></Field>

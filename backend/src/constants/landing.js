@@ -40,6 +40,56 @@ export function cpfLandingTemplate() {
   ];
 }
 
+const STEPS = { heading: 'How it works', items: [
+  { title: 'Free consultation', text: 'Meet our specialist, get examined and understand your options.' },
+  { title: 'Simple procedure', text: 'Day-care laser or Kshar Sutra treatment by experienced surgeons.' },
+  { title: 'Same-day discharge', text: 'Most patients walk home the same day with clear aftercare advice.' },
+  { title: 'Follow-up care', text: 'Scheduled reviews until you are fully healed.' },
+] };
+
+/** Modern: gradient hero, stats, steps, minimal features, package pricing, doctors, FAQ, CTA card */
+export function modernLandingTemplate() {
+  const base = Object.fromEntries(cpfLandingTemplate().map((b) => [b.type, b]));
+  const wa = `https://wa.me/91${CLINIC.whatsapp}`;
+  return [
+    base.header,
+    { id: id('hero'), type: 'hero', props: { eyebrow: 'Laser • Kshar Sutra • Day care', title: 'Painless Piles & Fistula Treatment in Delhi NCR', subtitle: 'Free consultation · Same-day discharge · Insurance & cashless', style: 'gradient', align: 'center', ctaText: 'Book Free Consultation', ctaLink: '#form', ctaText2: 'WhatsApp us', ctaLink2: wa } },
+    { id: id('stats'), type: 'stats', props: { bg: 'white', items: [{ value: '5', label: 'Clinics in Delhi NCR' }, { value: '2', label: 'Senior surgeons' }, { value: 'Free', label: 'First consultation' }] } },
+    { id: id('form'), type: 'form', props: { title: 'Get a call back in 30 minutes', subtitle: 'Share your details — our care team will call you.', layout: 'card', bg: 'dark', buttonText: 'Request call back' } },
+    { id: id('steps'), type: 'steps', props: { ...STEPS, style: 'timeline' } },
+    { ...base.features, id: id('features'), props: { ...base.features.props, style: 'minimal', heading: 'Why patients choose us' } },
+    { id: id('pricing'), type: 'pricing', props: { heading: 'Transparent treatment packages', subheading: 'All-inclusive day-care packages. Final price after examination.', items: [
+      { title: 'Laser Piles', price: '₹35,000', note: 'incl. 1 day stay', features: 'Laser haemorrhoidoplasty\nOT & surgeon\nRoom & nursing\nFollow-up visit', highlight: true, buttonText: 'Book consultation', buttonLink: '#form' },
+      { title: 'Laser Fistula', price: '₹40,000', note: 'incl. 1 day stay', features: 'FiLaC laser\nOT & surgeon\nRoom & nursing\nFollow-up visit', buttonText: 'Book consultation', buttonLink: '#form' },
+      { title: 'Kshar Sutra', price: '₹18,000', note: 'day care', features: 'Medicated thread therapy\nThread changes as advised\nAyurvedic aftercare', buttonText: 'Book consultation', buttonLink: '#form' },
+    ] } },
+    { id: id('doctors'), type: 'doctors', props: { heading: 'Meet our surgeons', bg: 'tint', items: [{ photo: '', name: 'Dr. Rakesh Gupta', qualification: 'Ayurvedic anorectal surgeon', text: '' }, { photo: '', name: 'Dr. Ruchi Gupta', qualification: 'Ayurvedic anorectal surgeon', text: '' }] } },
+    { id: id('faq'), type: 'faq', props: { heading: 'Common questions', bg: 'white', items: [
+      { q: 'Is the laser procedure painful?', a: 'It is done under anaesthesia. Most patients have mild discomfort afterwards that is controlled with medicines.' },
+      { q: 'How soon can I return to work?', a: 'Many patients resume desk work in 2–3 days. Your surgeon will advise based on your case.' },
+      { q: 'Is insurance accepted?', a: 'Yes — most insurers and TPAs are accepted, with cashless at select clinics. Our team helps with pre-authorisation.' },
+    ] } },
+    { ...base.cta, id: id('cta'), props: { ...base.cta.props, style: 'card', bgColor: '' } },
+    base.footer,
+  ];
+}
+
+/** Minimal: clean light hero, form card, conditions list, steps, FAQ */
+export function minimalLandingTemplate() {
+  const base = Object.fromEntries(cpfLandingTemplate().map((b) => [b.type, b]));
+  return [
+    base.header,
+    { id: id('hero'), type: 'hero', props: { title: 'Relief from piles, fistula & fissure — without big surgery', subtitle: 'Talk to a specialist today. First consultation is free.', style: 'light', align: 'center', ctaText: 'Book now', ctaLink: '#form' } },
+    { id: id('form'), type: 'form', props: { title: 'Book your free consultation', layout: 'card', bg: 'light', buttonText: 'Book now', subtitle: 'We call you back within 30 minutes (10 AM – 8 PM).' } },
+    { ...base.list, id: id('list'), props: { ...base.list.props, bg: 'white', style: 'grid' } },
+    { id: id('steps'), type: 'steps', props: { ...STEPS, style: 'numbers' } },
+    { id: id('faq'), type: 'faq', props: { heading: 'FAQ', bg: 'tint', items: [{ q: 'Do I need tests before treatment?', a: 'Basic blood tests are usually advised before a procedure. The doctor will guide you at the consultation.' }, { q: 'Which branch is nearest?', a: 'We have clinics in Rohini, Paschim Vihar, Indirapuram, Tilak Nagar and Dwarka.' }] } },
+    base.footer,
+  ];
+}
+
+export const LANDING_TEMPLATES = { classic: { name: 'Classic (CPF)', build: () => cpfLandingTemplate() }, modern: { name: 'Modern gradient', build: modernLandingTemplate }, minimal: { name: 'Minimal clean', build: minimalLandingTemplate } };
+
 export const DEFAULT_DESIGN = { primary: '#e21f26', accent: '#d4a017', dark: '#0f172a', tint: '#fff1f1', cta: '#14b8a6', font: 'Inter', showHeader: true };
 
 export const AI_ICONS = ['Award', 'Zap', 'Leaf', 'Clock', 'Wallet', 'Car', 'MapPin', 'HeartHandshake', 'Stethoscope', 'Star', 'Phone', 'CheckCircle2', 'Users', 'ShieldCheck', 'Syringe', 'Pill', 'Activity', 'ThumbsUp', 'Sparkles', 'Hospital', 'CalendarCheck2', 'BadgePercent', 'Ambulance'];

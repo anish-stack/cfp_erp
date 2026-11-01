@@ -29,6 +29,14 @@ r.get('/clinic', asyncHandler(async (_req, res) => {
   ok(res, { appName: cfg.APP_NAME, clinic: { name: s.clinic?.name, tagline: s.clinic?.tagline, phone: s.clinic?.phone, whatsapp: s.clinic?.whatsapp, email: s.clinic?.email, website: s.clinic?.website, logo }, theme: { console: s.theme?.console || {}, booking: s.theme?.booking || {} } });
 }));
 
+/** booking portal: is payment needed to book, and how much (doctor = id | 'any') */
+r.get('/booking-payment', asyncHandler(async (req, res) => {
+  const { bookingPayment } = await import('../portal/portal.appointments.routes.js');
+  const doctor = /^[a-f0-9]{24}$/.test(String(req.query.doctor || '')) ? String(req.query.doctor) : 'any';
+  const p = await bookingPayment(doctor);
+  ok(res, p ? { required: true, amount: p.amount, note: p.note } : { required: false });
+}));
+
 /** uploaded clinic logo (public: shown on booking portal, login screen) */
 r.get('/logo', asyncHandler(async (_req, res) => {
   const s = await getSettings();

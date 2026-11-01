@@ -37,3 +37,9 @@ export const useCan = () => {
   const perms = useAuth((s) => s.me?.permissions) || [];
   return (perm) => perms.includes('*') || [].concat(perm).some((x) => perms.includes(x));
 };
+
+/** optional modules switched on by the Super Admin (Settings → Modules) */
+export const useFeature = () => {
+  const f = useAuth((s) => s.me?.features) || {};
+  return (key) => !key || f[key] === true;
+};

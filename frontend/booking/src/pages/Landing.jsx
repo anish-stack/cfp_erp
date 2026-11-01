@@ -11,6 +11,7 @@ import { get, post } from '@/lib/api';
 import { getUtm } from '@/store/patient';
 import { errMsg, cn } from '@/lib/utils';
 import LandingPage, { fontHref } from '@/components/landing/LandingRenderer';
+import LandingWidgets from '@/components/landing/Widgets';
 
 export default function Landing() {
   const { slug } = useParams();
@@ -101,7 +102,13 @@ export default function Landing() {
     </form>
   ));
 
-  if (f.blocks?.length) return <LandingPage blocks={f.blocks} design={f.design} renderForm={blockForm} clinic={info?.clinic} />;
+  const widgets = f.design?.widgets || {};
+  const wheelApi = { load: (id) => get(`/public/wheels/${id}`), spin: (body) => post(`/public/wheels/${widgets.wheel?.wheelId}/spin`, body) };
+  if (f.blocks?.length) return (
+    <LandingPage blocks={f.blocks} design={f.design} renderForm={blockForm} clinic={info?.clinic}>
+      <LandingWidgets widgets={widgets} renderForm={blockForm} wheelApi={wheelApi} formSlug={slug} utm={getUtm()} />
+    </LandingPage>
+  );
 
   const form = done ? (
     <Card className="p-8 text-center"><CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" /><p className="mt-3 text-lg font-semibold">{done}</p></Card>

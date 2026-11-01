@@ -1,9 +1,10 @@
 export const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /** Compute one line. Intra-state → CGST = SGST = tax/2. */
-export function computeLine({ qty, rate, discountPct = 0, gstRate = 0 }, taxInclusive = true) {
+export function computeLine({ qty, rate, discountPct = 0, gstRate = 0, extraDiscount = 0 }, taxInclusive = true) {
   const gross = qty * rate;
-  const discountAmt = r2((gross * discountPct) / 100);
+  // extraDiscount = this line's share of a bill-level discount (coupon / loyalty points), applied before GST
+  const discountAmt = r2(Math.min(gross, (gross * discountPct) / 100 + extraDiscount));
   const net = gross - discountAmt;
   let taxable;
   let tax;

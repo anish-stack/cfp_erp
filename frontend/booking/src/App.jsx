@@ -12,6 +12,7 @@ import Profile from '@/pages/Profile';
 import Login from '@/pages/Login';
 import { usePatient } from '@/store/patient';
 import { cn } from '@/lib/utils';
+import InstallPrompt from '@/components/pwa/InstallPrompt';
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 } } });
 
@@ -44,6 +45,7 @@ function Shell({ children }) {
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-6">{children}</main>
+      <InstallPrompt title="Install CPF app" text="Book and track your visits from your home screen." />
       <footer className="mx-auto max-w-3xl px-4 pb-8 text-center text-xs text-muted-foreground">
         <p className="flex items-center justify-center gap-1"><Phone className="h-3 w-3" /> Need help? Call your nearest branch.</p>
         <p className="mt-1">© {new Date().getFullYear()} Centre for Piles &amp; Fistula · <a className="underline" href="https://centreforpilesandfistula.com">centreforpilesandfistula.com</a></p>

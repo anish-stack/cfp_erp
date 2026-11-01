@@ -11,7 +11,7 @@ import { crudRouter } from '../../utils/crud.js';
 import { objectId, ymd, paging } from '../../utils/zod.js';
 import { istDayRange, todayIST } from '../../utils/time.js';
 import { toCsv } from '../../utils/csv.js';
-import { cpfLandingTemplate, DEFAULT_DESIGN } from '../../constants/landing.js';
+import { LANDING_TEMPLATES, DEFAULT_DESIGN } from '../../constants/landing.js';
 import { Lead, LeadStage, LeadActivity, Task, SalesTarget, Campaign, EnquiryForm, LEAD_SOURCES } from '../../models/Crm.js';
 import { User } from '../../models/User.js';
 import { Appointment } from '../../models/Appointment.js';
@@ -269,6 +269,27 @@ r.delete('/leads/:id', permit('leads.delete'), validate({ params: idParam }), as
   ok(res, { deleted: true });
 }));
 
+/** sales person → WhatsApp straight from the lead panel (logged as an activity) */
+r.post('/leads/:id/whatsapp', permit('leads.edit'), validate({ params: idParam, body: z.object({ message: z.string().trim().min(1).max(3000), mediaUrl: z.string().url().startsWith('https://').optional(), mediaType: z.enum(['image', 'pdf']).optional() }) }), asyncHandler(async (req, res) => {
+  const lead = await loadLead(req);
+  const { sendWapp, wappConfigured } = await import('../../services/wapp.js');
+  const media = req.body.mediaUrl ? (req.body.mediaType === 'pdf' ? { pdf: req.body.mediaUrl } : { img1: req.body.mediaUrl }) : {};
+  let status = 'sent';
+  let error;
+  try {
+    const out = await sendWapp({ to: lead.phone, msg: req.body.message, ...media, event: 'crm.whatsapp', refType: 'Lead', refId: lead._id });
+    if (out?.skipped) { status = 'skipped'; error = out.reason || (wappConfigured() ? 'demo / invalid number' : 'WhatsApp not configured'); }
+  } catch (e) {
+    status = 'failed';
+    error = e.message;
+  }
+  const act = await LeadActivity.create({ lead: lead._id, type: 'whatsapp', text: req.body.message, meta: { status, error, mediaUrl: req.body.mediaUrl }, by: req.user._id });
+  if (status === 'sent') await Lead.updateOne({ _id: lead._id }, { $set: { lastContactAt: new Date() } });
+  audit(req, { action: 'leads.whatsapp', entity: 'Lead', entityId: lead._id, meta: { status } });
+  if (status === 'failed') throw new ApiError(502, `WhatsApp not sent: ${error}`);
+  ok(res, { status, error, activity: await act.populate('by', 'name') });
+}));
+
 r.post('/leads/:id/activities', permit('leads.edit'), validate({ params: idParam, body: z.object({
   type: z.enum(['note', 'call', 'whatsapp', 'sms', 'email']),
   text: z.string().max(2000).optional(),
@@ -433,8 +454,11 @@ r.get('/dashboard', permit('leads.view'), asyncHandler(async (req, res) => {
 
 // ---------- CMS: forms & landing pages ----------
 const fieldSchema = z.object({ key: z.string().regex(/^[a-z][a-z0-9_]*$/), label: z.string().min(1).max(80), type: z.enum(['text', 'tel', 'email', 'number', 'textarea', 'select', 'radio', 'checkbox', 'date']).default('text'), required: z.boolean().default(false), options: z.array(z.string().max(80)).max(30).optional(), placeholder: z.string().max(120).optional(), mapTo: z.enum(['name', 'phone', 'email', 'city', 'condition', 'branch']).nullable().optional() });
-r.get('/landing-template', permit('cms.view'), (_req, res) => ok(res, { blocks: cpfLandingTemplate(), design: DEFAULT_DESIGN }));
-export const BLOCK_TYPES = ['header', 'hero', 'form', 'gallery', 'features', 'text', 'list', 'imageText', 'cta', 'stats', 'faq', 'image', 'video', 'doctors', 'footer', 'spacer'];
+r.get('/landing-template', permit('cms.view'), (req, res) => {
+  const t = LANDING_TEMPLATES[req.query.variant] || LANDING_TEMPLATES.classic;
+  ok(res, { blocks: t.build(), design: DEFAULT_DESIGN, templates: Object.entries(LANDING_TEMPLATES).map(([k, v]) => ({ key: k, name: v.name })) });
+});
+export const BLOCK_TYPES = ['header', 'hero', 'form', 'gallery', 'features', 'text', 'list', 'imageText', 'cta', 'stats', 'faq', 'image', 'video', 'doctors', 'footer', 'spacer', 'steps', 'pricing'];
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const blockSchema = z.object({ id: z.string().min(1).max(40), type: z.enum(BLOCK_TYPES), hidden: z.boolean().optional(), props: z.record(z.any()).default({}) })
   .refine((b) => JSON.stringify(b.props).length < 60_000, 'Block content too large');
@@ -447,7 +471,13 @@ r.use('/forms', crudRouter({
     campaign: objectId.optional().nullable(), branch: objectId.optional().nullable(), defaultSource: z.enum(LEAD_SOURCES).optional(), assignTo: objectId.optional().nullable(),
     successMessage: z.string().max(300).optional(), redirectUrl: z.string().url().optional().or(z.literal('')), isActive: z.boolean().optional(),
     blocks: z.array(blockSchema).max(60).optional(),
-    design: z.object({ primary: hex.optional(), accent: hex.optional(), dark: hex.optional(), tint: hex.optional(), cta: hex.optional(), font: z.enum(['Inter', 'Poppins', 'Montserrat', 'Roboto', 'Lato', 'Open Sans', 'Nunito']).optional(), showHeader: z.boolean().optional() }).optional(),
+    design: z.object({ primary: hex.optional(), accent: hex.optional(), dark: hex.optional(), tint: hex.optional(), cta: hex.optional(), font: z.enum(['Inter', 'Poppins', 'Montserrat', 'Roboto', 'Lato', 'Open Sans', 'Nunito']).optional(), showHeader: z.boolean().optional(),
+      widgets: z.object({
+        floating: z.object({ enabled: z.boolean(), whatsapp: z.string().max(15).optional(), phone: z.string().max(15).optional(), message: z.string().max(300).optional(), label: z.string().max(40).optional() }).partial().optional(),
+        popup: z.object({ enabled: z.boolean(), trigger: z.enum(['delay', 'exit', 'scroll']), delaySec: z.number().int().min(0).max(300), scrollPct: z.number().int().min(5).max(100), title: z.string().max(120), subtitle: z.string().max(300), image: z.string().max(500), buttonText: z.string().max(40), repeatDays: z.number().int().min(0).max(90) }).partial().optional(),
+        wheel: z.object({ enabled: z.boolean(), wheelId: objectId.optional().or(z.literal('')), trigger: z.enum(['delay', 'exit', 'button']), delaySec: z.number().int().min(0).max(300), tabText: z.string().max(30) }).partial().optional(),
+      }).partial().optional(),
+    }).optional(),
   }),
 }));
 

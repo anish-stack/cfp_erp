@@ -96,6 +96,33 @@ export const M = {
       sign(ctx)
     ),
 
+  admitted: ({ a }, ctx) =>
+    lines(
+      `🏥 *Admission confirmed*`,
+      `Hello ${first(a.patient.name)}, you have been admitted at ${a.branch?.name || 'our hospital'}${a.ward?.name ? `, ${a.ward.name}` : ''}${a.bed?.number ? ` (Bed ${a.bed.number})` : ''}.`,
+      `Admission No: *${a.admissionNo}*`,
+      a.doctor?.name ? `Consultant: ${a.doctor.name}` : null,
+      a.plannedProcedure?.name ? `Planned: ${a.plannedProcedure.name}` : null,
+      '',
+      'Our nursing team is with you. Wishing you a quick recovery.',
+      sign(ctx)
+    ),
+  ipdDoc: ({ a, kind }, ctx) =>
+    lines(
+      kind === 'estimate' ? '🧾 *Treatment estimate*' : '🧾 *Interim bill*',
+      `Hello ${first(a.patient.name)}, please find the ${kind === 'estimate' ? 'estimate' : 'current (interim) bill'} for admission ${a.admissionNo} attached.`,
+      kind === 'estimate' ? 'Actual charges may vary with the length of stay and treatment.' : 'This is provisional — the final bill is issued at discharge.',
+      sign(ctx)
+    ),
+  discharged: ({ a }, ctx) =>
+    lines(
+      `✅ *Discharged*`,
+      `Hello ${first(a.patient.name)}, you have been discharged from ${a.branch?.name || 'our hospital'} (${a.admissionNo}).`,
+      a.discharge?.followUpDate ? `📅 Follow-up on *${fmtDate(a.discharge.followUpDate)}*` : null,
+      '',
+      'Your discharge summary is attached. Take medicines exactly as advised. In case of fever, bleeding or severe pain, contact us immediately.',
+      sign(ctx)
+    ),
   prescription: ({ rx }, ctx) =>
     lines(
       `💊 *Prescription*`,

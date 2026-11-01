@@ -12,10 +12,15 @@ import { Doctor } from '../../models/Doctor.js';
 import { DoctorSchedule } from '../../models/DoctorSchedule.js';
 import { User } from '../../models/User.js';
 import fs from 'node:fs';
+import multer from 'multer';
+import * as storage from '../../services/storage.js';
 import { privateUpload, safeJoin } from '../../middleware/upload.js';
 import { hasPerm } from '../../middleware/permit.js';
 
 const sigUpload = privateUpload('signatures');
+// public doctor photo (shown on the booking site / landing pages) → active storage driver (local / S3 / R2 / Cloudinary)
+const PHOTO_TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
+const photoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 1 }, fileFilter: (_req, f, cb) => (PHOTO_TYPES[f.mimetype] ? cb(null, true) : cb(ApiError.badRequest('JPG, PNG or WEBP only'))) });
 
 const body = z.object({
   name: z.string().trim().min(2).max(80),
@@ -112,6 +117,14 @@ r.patch('/:id', permit('doctors.edit'), validate({ params: idParam, body: body.p
   if (req.body.user !== undefined) await linkUser(d._id, req.body.user);
   audit(req, { action: 'doctors.edit', entity: 'Doctor', entityId: d._id, before, after: d });
   ok(res, d);
+}));
+
+// ---------- photo upload → returns a public URL to save in doctor.photo
+r.post('/photo', permit.any('doctors.create', 'doctors.edit'), photoUpload.single('file'), asyncHandler(async (req, res) => {
+  if (!req.file) throw ApiError.badRequest('Choose an image');
+  const out = await storage.put({ buffer: req.file.buffer, mime: req.file.mimetype, ext: PHOTO_TYPES[req.file.mimetype], folder: 'doctors' });
+  audit(req, { action: 'doctors.photo_upload', entity: 'Doctor', meta: { url: out.url } });
+  ok(res, { url: out.url }, 201);
 }));
 
 // ---------- signature (printed on prescriptions) — admins with doctors.edit, or the doctor themself

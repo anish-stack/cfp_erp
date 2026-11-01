@@ -12,6 +12,7 @@ const GREY = '#5b6472';
 const LIGHT = '#f3f6f8';
 const LINE = '#dfe4ea';
 
+const r2 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 const money = (n) => `Rs. ${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const dateIN = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '');
 const timeIN = (d) => new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
@@ -119,6 +120,24 @@ function letterhead(doc, b, branch, title, metaLines = []) {
 
 /** page footers on every page (after content, using bufferPages) */
 function finalize(doc, b, note) {
+  // QR → main website, bottom-right of the last page
+  if (b.qr) {
+    const small = doc.page.width < 500;
+    const size = small ? 46 : 58;
+    ensureSpace(doc, size + 10);
+    const x0 = L(doc);
+    const w = W(doc);
+    const y = Math.max(doc.y + 6, 0);
+    try {
+      doc.image(b.qr, x0 + w - size, y, { width: size, height: size });
+      const label = (b.qrUrl || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+      doc.font('Helvetica-Bold').fontSize(small ? 6.5 : 7.5).fillColor('#222').text('Scan to visit our website', x0 + w - size - 170, y + size / 2 - 9, { width: 162, align: 'right' });
+      doc.font('Helvetica').fontSize(small ? 6 : 7).fillColor(GREY).text(label, x0 + w - size - 170, doc.y + 1, { width: 162, align: 'right' });
+      doc.y = y + size + 4;
+    } catch {
+      /* QR is optional */
+    }
+  }
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i);
@@ -292,7 +311,9 @@ export function renderInvoicePdf(inv, b, out) {
   doc.y = startY;
   const endY = totalsBox(doc, b, [
     { k: 'Sub total', v: money(inv.subtotal) },
-    { k: 'Discount', v: `- ${money(inv.discount)}`, hide: !inv.discount },
+    { k: 'Discount', v: `- ${money(r2(inv.discount - (inv.coupon?.discount || 0) - (inv.loyalty?.redeemValue || 0)))}`, hide: !(inv.discount - (inv.coupon?.discount || 0) - (inv.loyalty?.redeemValue || 0) > 0.009) },
+    { k: `Coupon ${inv.coupon?.code || ''}`, v: `- ${money(inv.coupon?.discount)}`, hide: !inv.coupon?.discount },
+    { k: `Loyalty (${inv.loyalty?.redeemed || 0} pts)`, v: `- ${money(inv.loyalty?.redeemValue)}`, hide: !inv.loyalty?.redeemValue },
     { k: 'Taxable value', v: money(inv.taxable) },
     { k: 'CGST', v: money(inv.cgst) },
     { k: 'SGST', v: money(inv.sgst) },
@@ -306,6 +327,7 @@ export function renderInvoicePdf(inv, b, out) {
   doc.x = L(doc);
   doc.font('Helvetica-Oblique').fontSize(8).fillColor('#333').text(`Amount in words: ${inWords(inv.grandTotal)}`, { width: W(doc) });
   if (inv.taxInclusive) doc.font('Helvetica').fontSize(7).fillColor(GREY).text('Prices are inclusive of GST.');
+  if (inv.loyalty?.earned && inv.status !== 'cancelled') doc.font('Helvetica-Bold').fontSize(8).fillColor('#047857').text(`Loyalty points earned on this bill: ${inv.loyalty.earned}`);
   if (inv.payments?.length) {
     doc.moveDown(0.6);
     doc.fillColor(b.color).font('Helvetica-Bold').fontSize(8).text('PAYMENTS');
@@ -440,4 +462,130 @@ export function renderAppointmentSlipPdf(a, b, out) {
   section(doc, b, 'Please note', '• Arrive 10 minutes before your slot.\n• Carry previous reports and prescriptions.\n• Reschedule or cancel from the booking portal or by calling the branch.');
   if (a.branch?.address?.mapUrl) doc.font('Helvetica').fontSize(8).fillColor(b.color).text(`Map: ${a.branch.address.mapUrl}`, { link: a.branch.address.mapUrl });
   finalize(doc, b, `Generated ${dateIN(new Date())}`);
+}
+
+// ================================================================ IPD — admission sheet (face sheet + consent)
+const dtIN = (d) => (d ? `${dateIN(d)}, ${timeIN(d)}` : '');
+const PAYER = { self: 'Self pay', insurance: 'Insurance / TPA', corporate: 'Corporate', government: 'Government scheme' };
+
+export function renderAdmissionPdf(a, b, out) {
+  const doc = newDoc(out, A4, a.admissionNo);
+  letterhead(doc, b, a.branch, 'ADMISSION', [['Adm. No', a.admissionNo], ['Admitted', dateIN(a.admittedAt)], ['Time', timeIN(a.admittedAt)]]);
+  const p = a.patient || {};
+  infoBox(doc, b,
+    { title: 'Patient', rows: [['', p.name], ['Patient ID', p.patientId], ['Age / Sex', [ageOf(p), sexOf(p.gender)].filter(Boolean).join(' / ')], ['Mobile', p.mobile], ['Blood group', p.bloodGroup], ['Allergies', a.allergies || (p.allergies?.length ? p.allergies.join(', ') : 'None known')]] },
+    { title: 'Admission', rows: [['Type', { planned: 'Planned', emergency: 'Emergency', day_care: 'Day care' }[a.type]], ['Consultant', a.doctor?.name], ['Ward / Bed', [a.ward?.name, a.bed?.number && `Bed ${a.bed.number}`].filter(Boolean).join(' · ')], ['Expected discharge', a.expectedDischargeAt && dateIN(a.expectedDischargeAt)], ['Payer', PAYER[a.payer?.type || 'self']], ['Estimate', a.estimate ? money(a.estimate) : '']] }
+  );
+  section(doc, b, 'Reason for admission', a.reason);
+  section(doc, b, 'Provisional diagnosis', a.provisionalDiagnosis);
+  section(doc, b, 'Planned procedure', a.plannedProcedure?.name);
+  if (a.payer?.type && a.payer.type !== 'self') section(doc, b, 'Insurance / TPA', [a.payer.insurer, a.payer.tpa && `TPA: ${a.payer.tpa}`, a.payer.policyNo && `Policy: ${a.payer.policyNo}`, a.payer.cardNo && `Card: ${a.payer.cardNo}`, a.payer.preAuthNo && `Pre-auth: ${a.payer.preAuthNo} (${a.payer.preAuthStatus || 'pending'})`].filter(Boolean).join('  ·  '));
+  section(doc, b, 'Attendant', [a.attendant?.name, a.attendant?.relation, a.attendant?.phone].filter(Boolean).join(' · '));
+  ensureSpace(doc, 180);
+  doc.moveDown(0.4);
+  doc.fillColor(b.color).font('Helvetica-Bold').fontSize(10).text('Consent for admission & treatment', L(doc), doc.y);
+  doc.fillColor('#333').font('Helvetica').fontSize(8.5).text(
+    `I, the undersigned, consent to the admission of the above patient to ${b.clinic?.name || 'the hospital'} and to such investigations, anaesthesia, procedures and treatment as the treating doctor considers necessary. ` +
+    'The nature of the illness, the proposed procedure, its expected benefits, common risks and alternatives have been explained to me in a language I understand, and I had the opportunity to ask questions. ' +
+    'I understand that no guarantee has been given about the result. I agree to follow hospital rules and to pay the hospital charges as per the tariff.',
+    { width: W(doc), align: 'justify', lineGap: 1.5 });
+  doc.moveDown(2.2);
+  const y = doc.y;
+  const col = W(doc) / 3;
+  [['Patient / guardian', a.consent?.signedBy], ['Relation', a.consent?.relation], ['Witness', a.consent?.witness]].forEach(([l, v], i) => {
+    const x = L(doc) + col * i;
+    doc.moveTo(x + 6, y).lineTo(x + col - 12, y).lineWidth(0.6).strokeColor('#999').stroke();
+    doc.fillColor('#222').font('Helvetica-Bold').fontSize(8.5).text(v || '', x + 6, y + 4, { width: col - 18 });
+    doc.font('Helvetica').fillColor(GREY).fontSize(7.5).text(l, x + 6, doc.y, { width: col - 18 });
+  });
+  doc.y = y + 40;
+  doc.x = L(doc);
+  finalize(doc, b, 'Please keep this sheet with the patient file.');
+}
+
+// ================================================================ IPD — discharge summary
+export function renderDischargeSummaryPdf(a, b, out) {
+  const doc = newDoc(out, A4, a.admissionNo);
+  const d = a.discharge || {};
+  letterhead(doc, b, a.branch, 'DISCHARGE SUMMARY', [['Adm. No', a.admissionNo], ['Admitted', dateIN(a.admittedAt)], ['Discharged', a.dischargedAt ? dateIN(a.dischargedAt) : 'Pending']]);
+  const p = a.patient || {};
+  const proc = (a.procedures || []).filter((x) => x.status === 'done');
+  infoBox(doc, b,
+    { title: 'Patient', rows: [['', p.name], ['Patient ID', p.patientId], ['Age / Sex', [ageOf(p), sexOf(p.gender)].filter(Boolean).join(' / ')], ['Mobile', p.mobile], ['Address', [p.address?.line1, p.address?.city].filter(Boolean).join(', ')]] },
+    { title: 'Stay', rows: [['Consultant', a.doctor?.name], ['Ward / Bed', [a.ward?.name, a.bed?.number && `Bed ${a.bed.number}`].filter(Boolean).join(' · ')], ['Admitted', dtIN(a.admittedAt)], ['Discharged', dtIN(a.dischargedAt)], ['Discharge type', { normal: 'Normal / on advice', lama: 'LAMA', dama: 'DAMA', referred: 'Referred', death: 'Death', absconded: 'Absconded' }[d.type || 'normal']]] }
+  );
+  section(doc, b, 'Reason for admission', a.reason);
+  section(doc, b, 'Final diagnosis', d.finalDiagnosis || a.provisionalDiagnosis);
+  section(doc, b, 'Procedure(s) performed', d.procedureDone || proc.map((x) => `${x.name}${x.endedAt ? ` on ${dateIN(x.endedAt)}` : ''}${x.anaesthesia && x.anaesthesia !== 'none' ? ` under ${x.anaesthesia} anaesthesia` : ''}${x.surgeon?.name ? ` by ${x.surgeon.name}` : ''}`).join('\n'));
+  if (proc.some((x) => x.findings)) section(doc, b, 'Operative findings', proc.map((x) => x.findings).filter(Boolean).join('\n'));
+  section(doc, b, 'Course in hospital', d.courseInHospital);
+  section(doc, b, 'Investigations', d.investigations);
+  section(doc, b, 'Condition at discharge', d.conditionAtDischarge);
+  if (d.medications?.length) {
+    ensureSpace(doc, 60);
+    doc.fillColor(b.color).font('Helvetica-Bold').fontSize(9).text('Medicines on discharge', L(doc), doc.y);
+    doc.moveDown(0.2);
+    table(doc, b, [
+      { label: '#', w: 4, v: (_, i) => i + 1 },
+      { label: 'Medicine', w: 36, v: 'name', bold: true },
+      { label: 'Dose', w: 14, v: 'dose' },
+      { label: 'Frequency', w: 14, v: 'frequency' },
+      { label: 'Duration', w: 12, v: 'duration' },
+      { label: 'Instructions', w: 20, v: 'instructions' },
+    ], d.medications);
+  }
+  section(doc, b, 'Advice', d.advice);
+  section(doc, b, 'Diet', d.diet);
+  if (d.referredTo) section(doc, b, 'Referred to', d.referredTo);
+  if (d.followUpDate) {
+    ensureSpace(doc, 30);
+    const y = doc.y;
+    doc.roundedRect(L(doc), y, 300, 22, 4).fill(tint(b.color, 0.12));
+    doc.fillColor(b.color).font('Helvetica-Bold').fontSize(9.5).text(`Follow-up: ${ymdIN(d.followUpDate)}${d.followUpNote ? ` — ${d.followUpNote}` : ''}`, L(doc) + 10, y + 6.5, { width: 280 });
+    doc.y = y + 30;
+    doc.x = L(doc);
+  }
+  ensureSpace(doc, 40);
+  doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(GREY).text('In case of fever, bleeding, severe pain, inability to pass urine or any emergency, contact the hospital immediately or visit the nearest emergency.', L(doc), doc.y, { width: W(doc) });
+  if (b.showSignature !== false) signature(doc, b, 'Consultant', [a.doctor?.name, a.doctor?.regNo ? `Reg. No. ${a.doctor.regNo}` : ''].filter(Boolean).join(' · '), b.signatureImage && fs.existsSync(b.signatureImage) ? b.signatureImage : null);
+  finalize(doc, b, b.footer || 'Get well soon.');
+}
+
+// ================================================================ IPD — interim bill / estimate
+export function renderIpdBillPdf(a, bill, b, out, kind = 'interim') {
+  const est = kind === 'estimate';
+  const doc = newDoc(out, A4, a.admissionNo);
+  letterhead(doc, b, a.branch, est ? 'ESTIMATE' : 'INTERIM BILL', [['Adm. No', a.admissionNo], ['Date', dateIN(new Date())], ['Time', timeIN(new Date())]]);
+  const p = a.patient || {};
+  infoBox(doc, b,
+    { title: 'Patient', rows: [['', p.name], ['Patient ID', p.patientId], ['Age / Sex', [ageOf(p), sexOf(p.gender)].filter(Boolean).join(' / ')], ['Mobile', p.mobile]] },
+    { title: 'Stay', rows: [['Consultant', a.doctor?.name], ['Ward / Bed', [a.ward?.name, a.bed?.number && `Bed ${a.bed.number}`].filter(Boolean).join(' · ')], ['Admitted', dtIN(a.admittedAt)], [est ? 'Planned stay' : 'Days so far', est ? `${bill.days} day(s)` : `${bill.days}`], ['Payer', PAYER[a.payer?.type || 'self']]] }
+  );
+  if (est && a.plannedProcedure?.name) section(doc, b, 'Planned procedure', a.plannedProcedure.name);
+  table(doc, b, [
+    { label: '#', w: 4, v: (_, i) => i + 1 },
+    ...(est ? [] : [{ label: 'Date', w: 11, v: (l) => (l.date ? dateIN(l.date) : '') }]),
+    { label: 'Particulars', w: est ? 54 : 45, v: 'description', bold: true },
+    { label: 'Qty', w: 7, v: 'qty', align: 'right' },
+    { label: 'Rate', w: 14, v: (l) => money(l.rate), align: 'right' },
+    { label: 'Amount', w: 16, v: (l) => (l.included ? 'Included' : money(l.amount)), align: 'right' },
+  ], bill.lines);
+  const rows = [{ k: 'Total', v: money(bill.total), bold: true, big: est }];
+  if (!est) {
+    if (bill.advance) rows.push({ k: 'Advance received', v: `- ${money(bill.advance)}` });
+    if (bill.approved) rows.push({ k: 'Insurance approved', v: money(bill.approved) });
+    rows.push({ k: 'Balance (approx.)', v: money(Math.max(0, bill.total - (bill.advance || 0))), big: true });
+  }
+  doc.y = totalsBox(doc, b, rows, 260) + 6;
+  doc.x = L(doc);
+  if (est) {
+    if (bill.inclusions?.length) section(doc, b, 'Package includes', bill.inclusions.map((x) => `• ${x}`).join('\n'));
+    if (bill.exclusions?.length) section(doc, b, 'Not included (charged extra if used)', bill.exclusions.map((x) => `• ${x}`).join('\n'));
+    section(doc, b, 'Notes', 'This is an approximate estimate based on the planned treatment and expected length of stay. Actual charges may vary with the patient’s condition, length of stay, room change, medicines, consumables and investigations used. Estimate valid for 15 days.');
+  } else {
+    doc.moveDown(0.3);
+    doc.font('Helvetica-Oblique').fontSize(7.5).fillColor(GREY).text('Provisional bill for information. Room & nursing are charged per day; the final bill is issued at discharge.', L(doc), doc.y, { width: W(doc) });
+  }
+  signature(doc, b, 'Billing', b.clinic?.name);
+  finalize(doc, b, b.footer || '');
 }

@@ -33,7 +33,8 @@ const invoiceSchema = new mongoose.Schema(
     customer: { name: String, phone: String }, // walk-in POS buyer
     appointment: { type: ObjectId, ref: 'Appointment' },
     doctor: { type: ObjectId, ref: 'Doctor' },
-    type: { type: String, enum: ['consultation', 'treatment', 'procedure', 'pharmacy', 'mixed'], default: 'mixed' },
+    type: { type: String, enum: ['consultation', 'treatment', 'procedure', 'pharmacy', 'mixed', 'ipd'], default: 'mixed' },
+    admission: { type: ObjectId, ref: 'Admission' },
     source: { type: String, enum: ['billing', 'pos'], default: 'billing' },
     items: [lineSchema],
     taxInclusive: { type: Boolean, default: true },
@@ -45,6 +46,9 @@ const invoiceSchema = new mongoose.Schema(
     tax: Number,
     roundOff: Number,
     grandTotal: Number,
+    // bill-level discounts (already spread across the lines before GST)
+    coupon: { code: String, coupon: { type: ObjectId, ref: 'Coupon' }, discount: Number },
+    loyalty: { mobile: String, redeemed: { type: Number, default: 0 }, redeemValue: { type: Number, default: 0 }, earned: { type: Number, default: 0 } },
     paid: { type: Number, default: 0 },
     refunded: { type: Number, default: 0 },
     balance: Number,
@@ -71,7 +75,7 @@ const paymentSchema = new mongoose.Schema(
     invoice: { type: ObjectId, ref: 'Invoice' },
     patient: { type: ObjectId, ref: 'Patient' },
     kind: { type: String, enum: ['payment', 'advance', 'advance_adjust', 'refund'], required: true },
-    mode: { type: String, enum: ['cash', 'upi', 'card', 'bank', 'advance'], required: true },
+    mode: { type: String, enum: ['cash', 'upi', 'card', 'bank', 'advance', 'insurance'], required: true },
     amount: { type: Number, required: true, min: 0.01 },
     reference: String,
     notes: String,

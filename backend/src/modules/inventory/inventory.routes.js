@@ -60,7 +60,7 @@ const productSchema = z.object({
 });
 
 /** product search for POS/billing — includes branch stock */
-r.get('/products/search', permit.any('pos.view', 'billing.view', 'inventory.view'), validate({ query: z.object({ q: z.string().trim().max(60).default(''), branch: objectId.optional(), type: z.string().optional(), inStock: z.enum(['true']).optional() }) }), asyncHandler(async (req, res) => {
+r.get('/products/search', permit.any('pos.view', 'billing.view', 'inventory.view', 'ipd.view'), validate({ query: z.object({ q: z.string().trim().max(60).default(''), branch: objectId.optional(), type: z.string().optional(), inStock: z.enum(['true']).optional() }) }), asyncHandler(async (req, res) => {
   const q = req.query.q;
   const f = { isActive: true };
   if (q) {

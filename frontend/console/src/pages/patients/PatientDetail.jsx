@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { CalendarPlus, FilePlus2, Pill, Upload, FileText, Printer, Receipt, Pencil, Phone, Mail, Droplet, AlertTriangle, BellPlus, MessageCircle } from 'lucide-react';
+import { CalendarPlus, FilePlus2, Pill, Upload, FileText, Printer, Receipt, Pencil, Phone, Mail, Droplet, AlertTriangle, BellPlus, MessageCircle, Tags } from 'lucide-react';
+import { StickersDialog } from '@/components/print/PrintDialogs';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -82,11 +83,13 @@ export default function PatientDetail() {
         title={p.name}
         description={`${p.patientId} · ${p.gender} · ${ageOf(p) ?? '—'} yrs · registered ${fmtDate(p.createdAt)} at ${p.registeredBranch?.name || '—'}`}
         actions={<>
+          <Button variant="outline" onClick={() => setDlg('stickers')}><Tags /> Stickers</Button>
           <Can perm="patients.edit"><Button variant="outline" onClick={() => setDlg('edit')}><Pencil /> Edit</Button></Can>
           <Can perm="appointments.create"><Button variant="outline" onClick={() => setDlg('book')}><CalendarPlus /> Book</Button></Can>
           <Can perm="billing.create"><Button onClick={() => nav(`/billing/new?patient=${p._id}`)}><Receipt /> Bill</Button></Can>
         </>}
       />
+      <StickersDialog open={dlg === 'stickers'} onOpenChange={(o) => !o && setDlg(null)} patient={p} />
       <div className="grid gap-4 lg:grid-cols-4">
         <Card className="lg:col-span-1">
           <CardContent className="space-y-2 pt-4 text-sm">

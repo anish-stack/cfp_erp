@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Copy, ExternalLink, Pencil, ArrowUp, ArrowDown, Paintbrush, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Copy, ExternalLink, Pencil, ArrowUp, ArrowDown, Paintbrush, Sparkles, Send, Gift } from 'lucide-react';
 import { AiCreateDialog } from '@/components/landing/AiCreateDialog';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -15,7 +15,7 @@ import { Field } from '@/components/common/Field';
 import { Can } from '@/components/common/Can';
 import { useGet, useAction } from '@/hooks/queries';
 import { post, patch, API_URL } from '@/lib/api';
-import { useCan } from '@/store/auth';
+import { useCan, useFeature } from '@/store/auth';
 import { SOURCES, CONDITIONS } from './LeadForm';
 import { titleCase } from '@/lib/utils';
 
@@ -99,6 +99,7 @@ function Builder({ form, onDone }) {
 export default function Forms() {
   const can = useCan();
   const nav = useNavigate();
+  const feat = useFeature();
   const [editing, setEditing] = useState(null);
   const [aiOpen, setAiOpen] = useState(false);
   const { data, isLoading } = useGet(['/crm/forms'], '/crm/forms', { all: 'true' });
@@ -107,7 +108,7 @@ export default function Forms() {
   const embed = (slug) => `<form id="cpf-lead" data-slug="${slug}"></form>\n<script>/* POST ${API_URL}/public/forms/${slug}/submit  body: { data: {...fields}, utm: {...} } */</script>`;
   return (
     <div>
-      <PageHeader title="CMS & Forms" description="Landing pages and enquiry forms that drop leads straight into the CRM with UTM tracking" actions={<Can perm="cms.create"><div className="flex gap-2"><Button variant="outline" onClick={() => setAiOpen(true)}><Sparkles /> Create with AI</Button><Button onClick={() => setEditing({})}><Plus /> New</Button></div></Can>} />
+      <PageHeader title="CMS & Forms" description="Landing pages and enquiry forms that drop leads straight into the CRM with UTM tracking" actions={<div className="flex gap-2"><Button variant="outline" onClick={() => nav('/wheels')}><Gift /> Spin wheels</Button>{feat('marketing') && can('marketing.view') && <Button variant="outline" onClick={() => nav('/marketing')}><Send /> Marketing</Button>}<Can perm="cms.create"><div className="flex gap-2"><Button variant="outline" onClick={() => setAiOpen(true)}><Sparkles /> Create with AI</Button><Button onClick={() => setEditing({})}><Plus /> New</Button></div></Can></div>} />
       <AiCreateDialog open={aiOpen} onOpenChange={setAiOpen} fields={DEFAULT_FIELDS} campaigns={campaigns} />
       <DataTable loading={isLoading} rows={data} columns={[
         { key: 'n', header: 'Name', cell: (f) => <div><p className="font-medium">{f.name}</p><p className="font-mono text-xs text-muted-foreground">/f/{f.slug}</p></div> },

@@ -14,6 +14,7 @@ import * as v from '../patients/patients.validation.js';
 import { Prescription } from '../../models/Clinical.js';
 import { Invoice } from '../../models/Billing.js';
 import { Appointment } from '../../models/Appointment.js';
+import { Admission } from '../../models/Ipd.js';
 import { loadDocument, streamDocument } from '../../services/documents.js';
 
 /** Patient-facing API (appointment.* portal). Every query pinned to req.patientAccount. */
@@ -82,8 +83,13 @@ r.get('/invoices', asyncHandler(async (req, res) => {
   ok(res, await Invoice.find({ patient: { $in: ids }, status: { $ne: 'cancelled' } }).select('invoiceNo patient branch type grandTotal paid balance status createdAt').populate('patient', 'name').populate('branch', 'name').sort({ createdAt: -1 }).limit(100).lean());
 }));
 
-/** own PDFs: rx | invoice | slip */
-r.get('/documents/:type/:id', validate({ params: z.object({ type: z.enum(['rx', 'invoice', 'slip']), id: objectId }) }), asyncHandler(async (req, res) => {
+r.get('/admissions', asyncHandler(async (req, res) => {
+  const ids = await profileIds(req);
+  ok(res, await Admission.find({ patient: { $in: ids }, status: { $in: ['admitted', 'discharge_initiated', 'discharged'] } }).select('admissionNo patient doctor branch status admittedAt dischargedAt plannedProcedure discharge.followUpDate invoice').populate('patient', 'name').populate('doctor', 'name').populate('branch', 'name').populate('invoice', 'invoiceNo grandTotal balance').sort({ admittedAt: -1 }).limit(50).lean());
+}));
+
+/** own PDFs: rx | invoice | slip | discharge */
+r.get('/documents/:type/:id', validate({ params: z.object({ type: z.enum(['rx', 'invoice', 'slip', 'discharge']), id: objectId }) }), asyncHandler(async (req, res) => {
   const loaded = await loadDocument(req.params.type, req.params.id);
   const ids = (await profileIds(req)).map(String);
   if (!loaded.patient || !ids.includes(String(loaded.patient))) throw ApiError.notFound('Document not found');

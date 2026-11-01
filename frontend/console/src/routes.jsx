@@ -2,7 +2,7 @@ import { lazy } from 'react';
 import {
   LayoutDashboard, CalendarDays, Users, Stethoscope, CalendarClock, BellRing, Receipt, ShoppingCart, Wallet, Banknote,
   Package, Boxes, Truck, ArrowLeftRight, Building2, Target, ListTodo, Megaphone, FileText, BarChart3, UserCog, ShieldCheck,
-  ScrollText, Settings, Bell, Contact, Gauge, PhoneCall, UserPlus, FileStack,
+  ScrollText, Settings, Bell, Contact, Gauge, PhoneCall, UserPlus, FileStack, BedDouble, ClipboardList, Hotel, HeartPulse, Scissors, ShieldPlus, PackageOpen, ChartColumn, Send, Gift, TicketPercent, CreditCard,
 } from 'lucide-react';
 
 const L = (f) => lazy(f);
@@ -22,10 +22,22 @@ export const ROUTES = [
   { path: '/doctors', label: 'Doctors', icon: Stethoscope, group: 'Clinical', perm: 'doctors.view', el: L(() => import('@/pages/clinical/Doctors')) },
   { path: '/slots', label: 'Slots & Leave', icon: CalendarClock, group: 'Clinical', perm: 'slots.view', el: L(() => import('@/pages/clinical/Slots')) },
 
+  { path: '/ipd', label: 'Bed Board', icon: BedDouble, group: 'IPD', feature: 'ipd', perm: 'ipd.view', el: L(() => import('@/pages/ipd/BedBoard')) },
+  { path: '/ipd/admissions', label: 'Admissions', icon: ClipboardList, group: 'IPD', feature: 'ipd', perm: 'ipd.view', el: L(() => import('@/pages/ipd/Admissions')) },
+  { path: '/ipd/admissions/:id', group: 'IPD', feature: 'ipd', perm: 'ipd.view', el: L(() => import('@/pages/ipd/AdmissionPage')), hidden: true },
+  { path: '/ipd/nursing', label: 'Nursing Station', icon: HeartPulse, group: 'IPD', feature: 'ipd', perm: 'ipd.view', el: L(() => import('@/pages/ipd/NursingStation')) },
+  { path: '/ipd/ot', label: 'OT Schedule', icon: Scissors, group: 'IPD', feature: 'ipd', perm: 'ipd.view', el: L(() => import('@/pages/ipd/OtSchedule')) },
+  { path: '/ipd/claims', label: 'Insurance Claims', icon: ShieldPlus, group: 'IPD', feature: 'ipd', perm: 'ipd.view', el: L(() => import('@/pages/ipd/Claims')) },
+  { path: '/ipd/packages', label: 'Packages', icon: PackageOpen, group: 'IPD', feature: 'ipd', perm: 'ipd.view', el: L(() => import('@/pages/ipd/Packages')) },
+  { path: '/ipd/reports', label: 'IPD Reports', icon: ChartColumn, group: 'IPD', feature: 'ipd', perm: 'ipd.view', el: L(() => import('@/pages/ipd/IpdReports')) },
+  { path: '/ipd/setup', label: 'Wards & Beds', icon: Hotel, group: 'IPD', feature: 'ipd', perm: 'ipd.manage_settings', el: L(() => import('@/pages/ipd/WardSetup')) },
+
   { path: '/billing', label: 'Invoices', icon: Receipt, group: 'Finance', perm: 'billing.view', el: L(() => import('@/pages/billing/Invoices')) },
   { path: '/billing/new', group: 'Finance', perm: 'billing.create', el: L(() => import('@/pages/billing/NewInvoice')), hidden: true },
   { path: '/billing/:id', group: 'Finance', perm: ['billing.view', 'pos.view'], el: L(() => import('@/pages/billing/InvoiceDetail')), hidden: true },
   { path: '/pos', label: 'POS', icon: ShoppingCart, group: 'Finance', perm: 'pos.view', el: L(() => import('@/pages/billing/Pos')) },
+  { path: '/online-payments', label: 'Online Payments', icon: CreditCard, group: 'Finance', perm: 'billing.view', el: L(() => import('@/pages/billing/OnlinePayments')) },
+  { path: '/coupons', label: 'Coupons & Loyalty', icon: TicketPercent, group: 'Finance', perm: 'pos.view', el: L(() => import('@/pages/billing/Coupons')) },
   { path: '/payments', label: 'Payments', icon: Banknote, group: 'Finance', perm: 'billing.view', el: L(() => import('@/pages/billing/Payments')) },
   { path: '/expenses', label: 'Expenses', icon: Wallet, group: 'Finance', perm: 'expenses.view', el: L(() => import('@/pages/billing/Expenses')) },
 
@@ -41,8 +53,10 @@ export const ROUTES = [
   { path: '/tasks', label: 'Tasks', icon: ListTodo, group: 'CRM', perm: 'tasks.view', el: L(() => import('@/pages/crm/Tasks')) },
   { path: '/campaigns', label: 'Campaigns', icon: Megaphone, group: 'CRM', perm: 'campaigns.view', el: L(() => import('@/pages/crm/Campaigns')) },
   { path: '/sales', label: 'Targets & Performance', icon: BarChart3, group: 'CRM', perm: 'sales.view', el: L(() => import('@/pages/crm/Sales')) },
+  { path: '/marketing', label: 'Marketing', icon: Send, group: 'CRM', perm: 'marketing.view', feature: 'marketing', el: L(() => import('@/pages/crm/Marketing')) },
   { path: '/forms/:id/design', group: 'CRM', perm: 'cms.view', el: L(() => import('@/pages/crm/PageDesigner')), hidden: true },
   { path: '/forms', label: 'CMS & Forms', icon: FileText, group: 'CRM', perm: 'cms.view', el: L(() => import('@/pages/crm/Forms')) },
+  { path: '/wheels', label: 'Spin Wheels', icon: Gift, group: 'CRM', perm: 'cms.view', el: L(() => import('@/pages/crm/SpinWheels')) },
 
   { path: '/reports', label: 'Reports', icon: BarChart3, group: 'Insights', perm: 'reports.view', el: L(() => import('@/pages/Reports')) },
 
@@ -56,4 +70,4 @@ export const ROUTES = [
   { path: '/account', group: 'General', perm: null, el: L(() => import('@/pages/Account')), hidden: true },
 ];
 
-export const GROUP_ORDER = ['General', 'Clinical', 'Finance', 'Pharmacy', 'CRM', 'Insights', 'Organization', 'System'];
+export const GROUP_ORDER = ['General', 'Clinical', 'IPD', 'Finance', 'Pharmacy', 'CRM', 'Insights', 'Organization', 'System'];

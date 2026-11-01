@@ -98,7 +98,7 @@ const FIELDS = [
   { name: 'followUpFee', label: 'Follow-up fee', type: 'number' },
   { name: 'user', label: 'Login account (doctor role)', optionsQuery: { url: '/staff', params: { limit: 100 }, map: (u) => ({ value: u._id, label: `${u.name} · ${u.role?.name || ''}` }) } },
   { name: 'branches', label: 'Branches', type: 'multiselect', required: true, colSpan: 2, optionsQuery: { url: '/branches/names', map: (b) => ({ value: b._id, label: b.name }) } },
-  { name: 'photo', label: 'Photo URL', colSpan: 2 },
+  { name: 'photo', label: 'Doctor photo (shown on booking site & landing pages)', type: 'image', uploadUrl: '/doctors/photo', round: true, colSpan: 2 },
   { name: 'bio', label: 'Bio', type: 'textarea', colSpan: 2 },
   { name: 'acceptsOnlineBooking', label: 'Online booking', type: 'switch' },
   { name: 'isActive', label: 'Active', type: 'switch' },
@@ -120,7 +120,7 @@ export default function Doctors() {
         toForm={(d) => ({ ...d, user: d.user?._id || '', branches: d.branches.map((b) => b._id) })}
         toPayload={(v) => ({ ...v, user: v.user || null, photo: v.photo || undefined })}
         columns={[
-          { key: 'name', header: 'Doctor', cell: (d) => <div><p className="font-medium">{d.name}</p><p className="text-xs text-muted-foreground">{d.qualification}</p></div> },
+          { key: 'name', header: 'Doctor', cell: (d) => <div className="flex items-center gap-3">{d.photo ? <img src={d.photo} alt="" className="h-10 w-10 shrink-0 rounded-full border object-cover object-top" /> : <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{d.name.replace(/^Dr\.?\s*/i, '')[0]}</span>}<div><p className="font-medium">{d.name}</p><p className="text-xs text-muted-foreground">{d.qualification}</p></div></div> },
           { key: 'branches', header: 'Branches', cell: (d) => <div className="flex flex-wrap gap-1">{d.branches.map((b) => <Badge key={b._id} variant="secondary">{b.code}</Badge>)}</div> },
           { key: 'fee', header: 'Fee', cell: (d) => inr(d.consultationFee) },
           { key: 'online', header: 'Online', cell: (d) => (d.acceptsOnlineBooking ? <Badge variant="success">Yes</Badge> : <Badge variant="secondary">No</Badge>) },

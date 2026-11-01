@@ -616,6 +616,113 @@ async function main() {
   }
   });
 
+  // ---------------------------------------------------------------- IPD: admissions, procedures, MAR, charges, discharges
+  await safe('IPD admissions', async () => {
+    const { Admission, Bed } = await import('../models/Ipd.js');
+    if (!(await empty(Admission))) return skip('IPD admissions');
+    const ipd = await import('../modules/ipd/ipd.service.js');
+    const nurse = { _id: U['rohini.reception@demo.cpf']._id };
+    const docU = { _id: rakesh.user || nurse._id };
+    const H = 3_600_000;
+    const pool = [...patients].filter((p) => p.relation === 'self').slice(5, 20);
+    const PLAN = [
+      // [branch, bedPrefix, patientIdx, procSku, daysAgo, discharge?, type]
+      ['ROH', 'PR-', 0, 'SRV-KSHAR', 6, 'done', 'planned'],
+      ['ROH', 'GW-', 1, 'SRV-LASER-PILES', 4, 'done', 'planned'],
+      ['PVH', 'SP-', 2, 'SRV-LASER-FIST', 9, 'done', 'planned'],
+      ['PVH', 'DC-', 3, 'SRV-IRC', 2, 'done', 'day_care'],
+      ['ROH', 'GW-', 4, 'SRV-LASER-FISS', 1, 'active', 'planned'],
+      ['ROH', 'PR-', 5, 'SRV-PNS', 0.3, 'active', 'planned'],
+      ['PVH', 'GW-', 6, 'SRV-KSHAR', 2, 'summary', 'planned'],
+      ['PVH', 'SP-', 7, null, 0.5, 'active', 'emergency'],
+    ];
+    let made = 0;
+    for (const [code, prefix, pi, sku, daysAgo, end, type] of PLAN) {
+      const patient = pool[pi];
+      if (!patient) continue;
+      const bed = await Bed.findOne({ branch: B[code]._id, number: new RegExp(`^${prefix}`), status: 'available' });
+      if (!bed) continue;
+      const at = new Date(Date.now() - daysAgo * 24 * H);
+      const proc = sku && svc[sku];
+      const a = await ipd.admit({
+        branch: B[code]._id, patient: patient._id, bed: bed._id, doctor: pick([rakesh, ruchi])._id, type, admittedAt: at,
+        expectedDischargeAt: new Date(at.getTime() + (type === 'day_care' ? 8 * H : 48 * H)),
+        reason: type === 'emergency' ? 'Severe bleeding per rectum with weakness' : pick(['Painful swelling with discharge near anus', 'Bleeding during stools for 3 months', 'Pain during defecation, chronic fissure', 'Recurrent discharge from natal cleft']),
+        provisionalDiagnosis: proc ? proc.name.replace(/ \(.*\)$/, '') : 'Bleeding haemorrhoids — for evaluation',
+        plannedProcedure: proc ? { product: proc._id } : undefined, procedureAt: proc ? new Date(at.getTime() + 3 * H) : undefined,
+        attendant: { name: pick(['Suman', 'Rakesh', 'Anita', 'Vijay']), phone: `90000098${String(pi).padStart(2, '0')}`, relation: pick(['Spouse', 'Son', 'Daughter', 'Brother']) },
+        payer: pi % 3 === 0 ? { type: 'insurance', insurer: pick(['Star Health', 'HDFC ERGO', 'Niva Bupa']), tpa: pick(['Medi Assist', 'Paramount TPA']), policyNo: `POL${int(100000, 999999)}`, preAuthNo: `PA${int(10000, 99999)}`, preAuthStatus: 'approved', approvedAmount: 40000 } : { type: 'self' },
+        estimate: proc ? (proc.sellPrice || 20000) + 6000 : 8000,
+      }, nurse);
+      await import('../modules/billing/billing.service.js').then((b) => b.addAdvance({ branch: B[code]._id, patient: patient._id, mode: pick(['upi', 'cash', 'card']), amount: pick([5000, 10000, 15000]), notes: `IPD deposit ${a.admissionNo}` }, nurse));
+      const doc = await Admission.findById(a._id);
+      doc.consent = { signed: true, signedBy: patient.name, relation: 'Self', witness: 'Staff nurse', at };
+      doc.preOp = (doc.preOp || []).map((x) => ({ ...x.toObject(), done: true, by: nurse._id, at }));
+      const hours = Math.max(2, Math.floor(daysAgo * 24));
+      for (let h = 1; h < hours; h += 6) doc.vitals.push({ at: new Date(at.getTime() + h * H), bp: pick(['120/80', '126/82', '118/76', '134/86']), pulse: int(70, 96), temp: pick([98.2, 98.4, 98.6, 99.1]), spo2: int(96, 99), pain: int(1, 6), by: nurse._id });
+      doc.notes.push({ at: new Date(at.getTime() + 1 * H), type: 'nursing', text: 'Patient received in ward, vitals stable, IV line secured. Attendant counselled.', by: nurse._id });
+      doc.notes.push({ at: new Date(at.getTime() + 2 * H), type: 'doctor_round', text: 'Examined. Plan as discussed. NBM 6 h before procedure.', by: docU._id });
+      doc.medications.push({ name: 'Inj. Ceftriaxone 1 g', dose: '1 g', route: 'IV', frequency: 'BD', orderedBy: docU._id, startAt: at, administrations: [{ at: new Date(at.getTime() + 2 * H), status: 'given', by: nurse._id }, { at: new Date(at.getTime() + 14 * H), status: 'given', by: nurse._id }] });
+      doc.medications.push({ name: 'Inj. Paracetamol 1 g', dose: '1 g', route: 'IV', frequency: 'SOS', orderedBy: docU._id, startAt: at, administrations: [{ at: new Date(at.getTime() + 5 * H), status: 'given', note: 'Pain 6/10', by: nurse._id }] });
+      if (doc.procedures[0]) {
+        const p = doc.procedures[0];
+        if (end !== 'active' || daysAgo >= 1) {
+          Object.assign(p, { status: 'done', startedAt: new Date(at.getTime() + 3 * H), endedAt: new Date(at.getTime() + 4 * H), anaesthesia: pick(['local', 'spinal', 'saddle']), ot: 'OT-1', anaesthetist: 'Dr. N. Kapoor', findings: pick(['Grade III piles at 3, 7, 11 o’clock — lasered', 'Low trans-sphincteric fistula, Kshar Sutra applied', 'Posterior fissure with sentinel tag — excised']) });
+          await ipd.procedureCharge(doc, p, docU);
+        }
+      }
+      doc.charges.push({ kind: 'ot', description: 'OT charges', qty: 1, rate: 5000, amount: 5000, by: nurse._id, date: new Date(at.getTime() + 4 * H) });
+      doc.charges.push({ kind: 'doctor_visit', description: 'Consultant visit', qty: Math.max(1, Math.round(daysAgo)), rate: 500, amount: 500 * Math.max(1, Math.round(daysAgo)), by: nurse._id });
+      await doc.save();
+      for (const [skuM, q] of [['MED-SITZ', 2], ['MED-LIDO', 1], ['CON-GAUZ', 2]]) {
+        if (P[skuM]) await ipd.issueMedicine(a._id, { product: P[skuM]._id, qty: q }, nurse).catch(() => {});
+      }
+      if (end === 'summary' || end === 'done') {
+        await ipd.saveSummary(a._id, {
+          type: 'normal', finalDiagnosis: doc.provisionalDiagnosis, conditionAtDischarge: 'Stable, ambulatory, pain controlled, passing urine & stools.',
+          courseInHospital: 'Admitted for planned procedure. Pre-op workup within normal limits. Procedure done uneventfully. Post-op period uneventful.',
+          medications: [{ name: 'Arshoghni Vati', dose: '2 tab', frequency: '1-0-1', duration: '15 days', instructions: 'After food' }, { name: 'Sitz bath (Triphala)', dose: '1 sachet', frequency: 'Twice daily', duration: '15 days' }, { name: 'Isabgol husk', dose: '2 tsp', frequency: 'Bedtime', duration: '30 days' }],
+          advice: 'Sitz bath twice daily, high-fibre diet, 3–4 L water, avoid long sitting. Report fever, bleeding or retention of urine immediately.', diet: 'High fibre, avoid spicy/oily food.',
+          followUpDate: addDays(today, int(3, 10)), followUpNote: 'Wound review',
+        }, docU);
+      }
+      if (end === 'done') {
+        const out = type === 'day_care' ? 0.3 : Math.min(daysAgo - 0.2, 2.5);
+        await ipd.finalizeDischarge(a._id, { useAdvance: true, payments: [], dischargedAt: new Date(Date.now() - (daysAgo - out) * 24 * H) }, nurse).then(async ({ invoice }) => {
+          if (invoice && invoice.balance > 0) await import('../modules/billing/billing.service.js').then((b) => b.addPayment(invoice._id, { mode: pick(['upi', 'card', 'cash']), amount: invoice.balance }, nurse));
+        });
+      }
+      made++;
+    }
+    // claims for insurance admissions, a few lab orders, diets, one advance bed booking
+    const { InsuranceClaim, IpdPackage } = await import('../models/Ipd.js');
+    const claimsMod = await import('../modules/ipd/ipd.claims.js');
+    for (const adm of await Admission.find({ 'payer.type': 'insurance' })) {
+      let c = adm.claim ? await InsuranceClaim.findById(adm.claim) : await claimsMod.createClaim(adm, nurse);
+      if (adm.status === 'discharged' && adm.invoice && c) {
+        c = await InsuranceClaim.findById(c._id);
+        c.status = 'submitted'; c.claimNo = `CLM${int(100000, 999999)}`; c.submittedAt = new Date();
+        c.timeline.push({ status: 'submitted', note: 'Claim file couriered to TPA', by: nurse._id });
+        await c.save();
+      }
+    }
+    const pk = await IpdPackage.findOne({ name: /Piles/ });
+    for (const adm of await Admission.find({ status: { $in: ['admitted', 'discharge_initiated'] } })) {
+      adm.diet = { type: pick(['soft', 'high_fibre', 'normal', 'liquid']), notes: 'Warm water sitz bath after meals', by: nurse._id, at: new Date() };
+      adm.investigations.push({ name: 'CBC', rate: 350, status: 'reported', result: 'Hb 13.2 g/dL, TLC 7,800 — within normal limits', reportedAt: new Date(), orderedBy: docU._id, by: nurse._id });
+      adm.investigations.push({ name: 'Blood sugar (Random)', rate: 150, status: pick(['ordered', 'sample_collected']), orderedBy: docU._id });
+      adm.charges.push({ kind: 'investigation', description: 'CBC', qty: 1, rate: 350, amount: 350, by: nurse._id }, { kind: 'investigation', description: 'Blood sugar (Random)', qty: 1, rate: 150, amount: 150, by: nurse._id });
+      if (pk && !adm.package?.name && adm.plannedProcedure?.name && /piles/i.test(adm.plannedProcedure.name)) adm.package = ipd.packageSnapshot(pk);
+      await adm.save();
+    }
+    const freeBed = await Bed.findOne({ branch: B.PVH._id, status: 'available', number: /^PR-/ });
+    if (freeBed) await Bed.updateOne({ _id: freeBed._id }, { $set: { status: 'reserved', reservation: { patient: pool[9]?._id, name: pool[9]?.name || 'Planned patient', phone: pool[9]?.mobile, date: new Date(Date.now() + 24 * H), note: 'Planned laser piles — admit 8 AM', by: nurse._id, at: new Date() } } });
+
+    // a bed under cleaning + one under maintenance for the bed board
+    await Bed.updateOne({ branch: B.ROH._id, status: 'available', number: /^GW-/ }, { $set: { status: 'maintenance', note: 'AC repair (demo)' } });
+    log(`✔ ${made} IPD admissions (active, discharge pending, discharged with IPD bills), vitals, MAR, procedures, pharmacy issues`);
+  });
+
   // ---------------------------------------------------------------- expenses
   await safe('expenses', async () => {
   if (await empty(Expense)) {
@@ -631,6 +738,72 @@ async function main() {
   log('✔ branch expenses (one pending approval)');
   });
 
+  // demo: switch on every optional module so all screens have data
+  await Settings.updateOne({ _id: 'global' }, { $set: { 'features.ipd': true, 'features.exotel': true, 'features.marketing': true } });
+  await safe('marketing campaigns', async () => {
+    const { Broadcast } = await import('../models/Marketing.js');
+    if (!(await empty(Broadcast))) return skip('Marketing campaigns');
+    const by = U['marketing@demo.cpf']._id;
+    await Broadcast.create({ name: 'Monsoon piles care tips (demo)', category: 'health_info', message: 'Hello {first} 👋\n\nSimple habits that help prevent piles: 3–4 L water, fibre, walk daily, avoid straining.\n\nFree check-up at {clinic} — call {phone}.', audience: { patients: true }, status: 'done', startedAt: new Date(Date.now() - 3 * 86_400_000), finishedAt: new Date(Date.now() - 3 * 86_400_000 + 3_600_000), stats: { total: 34, sent: 0, failed: 0, skipped: 34 }, createdBy: by });
+    await Broadcast.create({ name: 'Laser piles package offer (demo draft)', category: 'package', message: 'Hello {first} 🙏\n\nAll-inclusive *Laser Piles package* at {clinic}: ₹35,000 incl. 1 day stay, OT & surgeon. Insurance & cashless available.\n\nCall {phone} to book your free consultation.', audience: { patients: false, leads: true }, status: 'draft', createdBy: by });
+    log('✔ marketing campaigns (1 sent, 1 draft)');
+  });
+  await safe('spin wheel', async () => {
+    const { SpinWheel, SpinEntry } = await import('../models/Spin.js');
+    if (!(await empty(SpinWheel))) return skip('Spin wheels');
+    const segs = [
+      ['Free consultation', 'prize', 30, null, '#e21f26'], ['10% off procedure', 'prize', 15, 50, '#0f172a'], ['Free lab test (CBC)', 'prize', 15, 100, '#d4a017'],
+      ['Better luck next time', 'none', 25, null, '#64748b'], ['₹500 off', 'prize', 10, 30, '#14b8a6'], ['Free pickup & drop', 'prize', 5, 10, '#7c3aed'],
+    ].map(([label, kind, weight, stock, color]) => ({ label, kind, weight, stock, remaining: stock, color, textColor: '#ffffff', description: kind === 'prize' ? 'Valid at any CPF branch on your first visit.' : undefined }));
+    const w = await SpinWheel.create({ name: 'Diwali Spin & Win (demo)', segments: segs, createdBy: U['marketing@demo.cpf']._id });
+    const form = await EnquiryForm.findOne({ slug: 'laser-piles-treatment-delhi' });
+    if (form) {
+      form.design = { ...(form.design?.toObject?.() || form.design || {}), widgets: {
+        floating: { enabled: true, whatsapp: '9212395788', phone: '9212395788', message: 'Hi, I want to know about piles treatment' },
+        popup: { enabled: true, trigger: 'exit', delaySec: 20, title: 'Wait! Get a free call back', subtitle: 'Our specialist will call you in 30 minutes.', buttonText: 'Call me back', repeatDays: 3 },
+        wheel: { enabled: true, wheelId: String(w._id), trigger: 'delay', delaySec: 8, tabText: 'Spin & Win' },
+      } };
+      form.markModified('design');
+      await form.save();
+    }
+    const srcs = [['google', 'cpc'], ['facebook', 'paid'], ['instagram', 'social'], [null, null], ['google', 'organic']];
+    const cities = ['Delhi', 'Ghaziabad', 'Noida', 'Gurugram', 'Faridabad'];
+    const devs = [{ type: 'mobile', os: 'Android', browser: 'Chrome' }, { type: 'mobile', os: 'iOS', browser: 'Safari' }, { type: 'desktop', os: 'Windows', browser: 'Chrome' }, { type: 'mobile', os: 'Android', browser: 'In-app (FB/IG)' }];
+    const now = Date.now();
+    const docs = [];
+    for (let i = 0; i < 40; i++) {
+      const sIdx = Math.floor(rnd() * segs.length);
+      const seg = w.segments[sIdx];
+      const [source, medium] = srcs[i % srcs.length];
+      const at = new Date(now - Math.floor(rnd() * 14) * 864e5 - Math.floor(rnd() * 864e5));
+      const win = seg.kind === 'prize';
+      docs.push({
+        wheel: w._id, form: form?._id, name: `Visitor ${i + 1}`, phone: `90000${String(20000 + i)}`, segment: seg._id, prize: seg.label, isWin: win,
+        code: win ? `CPF-DEMO${String(i).padStart(2, '0')}` : undefined, status: win ? (i % 4 === 0 ? 'redeemed' : 'won') : 'lost',
+        expiresAt: win ? new Date(at.getTime() + 30 * 864e5) : undefined, redeemedAt: win && i % 4 === 0 ? new Date(at.getTime() + 2 * 864e5) : undefined,
+        utm: source ? { source, medium, campaign: 'diwali-offer' } : {}, pageUrl: 'https://appointment.centreforpilesandfistula.com/f/laser-piles-treatment-delhi',
+        device: devs[i % devs.length], city: cities[i % cities.length], region: cities[i % cities.length] === 'Delhi' ? 'Delhi' : 'Uttar Pradesh', country: 'IN', ip: `103.21.${i}.10`, createdAt: at, updatedAt: at,
+      });
+    }
+    await SpinEntry.insertMany(docs);
+    for (const s of w.segments) {
+      const won = docs.filter((d) => String(d.segment) === String(s._id)).length;
+      s.won = won;
+      if (s.stock !== null) s.remaining = Math.max(0, s.stock - won);
+    }
+    await w.save();
+    log('✔ spin wheel (6 prizes, 40 demo spins) + popup & floating buttons on the demo landing page');
+  });
+  await safe('coupons & loyalty', async () => {
+    const { Coupon } = await import('../models/Loyalty.js');
+    await Settings.updateOne({ _id: 'global', 'loyalty.enabled': { $ne: true } }, { $set: { 'loyalty.enabled': true } });
+    if (!(await empty(Coupon))) return skip('Coupons');
+    await Coupon.create([
+      { code: 'WELCOME10', description: '10% off your first pharmacy bill', type: 'percent', value: 10, maxDiscount: 300, minBill: 300, appliesTo: 'products', perCustomer: 1 },
+      { code: 'FLAT200', description: '₹200 off on bills above ₹1,500', type: 'flat', value: 200, minBill: 1500, appliesTo: 'all', usageLimit: 100, perCustomer: 1 },
+    ]);
+    log('✔ coupons WELCOME10, FLAT200 · loyalty points switched on');
+  });
   await Settings.updateOne({ _id: 'global' }, { $set: { demoSeededAt: new Date() } }, { strict: false });
   clearSettingsCache();
 

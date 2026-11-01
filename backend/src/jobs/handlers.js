@@ -14,6 +14,7 @@ import { Branch } from '../models/Branch.js';
 import { User } from '../models/User.js';
 import { Lead } from '../models/Crm.js';
 import { Webhook } from '../models/Misc.js';
+import { Admission } from '../models/Ipd.js';
 import { stockSummary, expiringBatches } from '../modules/inventory/stock.service.js';
 import { todayIST } from '../utils/time.js';
 import { cfg } from '../services/runtimeConfig.js';
@@ -61,7 +62,12 @@ export const handlers = {
     if (!build) return;
     const ref = { event: `appointment.${event}`, refType: 'Appointment', refId: a._id };
     const tasks = [];
-    if (on(s, APPT_TOGGLE[event])) tasks.push(sendWapp({ to: a.patient.mobile, msg: build({ a }, ctxOf(s)), ...ref }));
+    if (on(s, APPT_TOGGLE[event])) {
+      // booked / rescheduled → appointment slip PDF attached
+      tasks.push(['booked', 'rescheduled'].includes(event)
+        ? sendWappWithDoc({ to: a.patient.mobile, msg: build({ a }, ctxOf(s)), docType: 'slip', docId: a._id, docName: `Appointment-${a.bookingId}`, ...ref })
+        : sendWapp({ to: a.patient.mobile, msg: build({ a }, ctxOf(s)), ...ref }));
+    }
     if (s.notifications?.sms && env.MSG91_FLOW_APPT && ['booked', 'rescheduled', 'cancelled'].includes(event)) {
       tasks.push(sendSmsFlow({ to: a.patient.mobile, flowId: env.MSG91_FLOW_APPT, vars: { name: a.patient.name, booking: a.bookingId, date: fmtDate(a.date), time: a.start, branch: a.branch?.name, status: event }, ref }));
     }
@@ -94,6 +100,34 @@ export const handlers = {
     const rx = await Prescription.findById(rxId).populate('patient', 'name mobile').populate('doctor', 'name').lean();
     if (!rx) return;
     await sendWappWithDoc({ to: rx.patient.mobile, msg: M.prescription({ rx }, ctxOf(s)), docType: 'rx', docId: rx._id, docName: `Prescription-${rx.rxNo}`, event: 'prescription.send', refType: 'Prescription', refId: rx._id });
+  },
+
+  'ipd.admitted': async ({ admissionId }) => {
+    const s = await getSettings();
+    if (!on(s, 'ipd')) return;
+    const a = await Admission.findById(admissionId).populate('patient', 'name mobile').populate('doctor', 'name').populate('branch', 'name').populate('bed', 'number').populate('ward', 'name').lean();
+    if (!a?.patient?.mobile) return;
+    await sendWappWithDoc({ to: a.patient.mobile, msg: M.admitted({ a }, ctxOf(s)), docType: 'admission', docId: a._id, docName: `Admission-${a.admissionNo}`, event: 'ipd.admitted', refType: 'Admission', refId: a._id });
+  },
+
+  'broadcast.run': async ({ id }) => (await import('../modules/marketing/marketing.service.js')).startBroadcast(id),
+  'broadcast.send': async (data) => (await import('../modules/marketing/marketing.service.js')).sendOne(data),
+
+  'ipd.send_doc': async ({ admissionId, kind }) => {
+    const s = await getSettings();
+    if (kind === 'discharge') return handlers['ipd.discharged']({ admissionId, force: true });
+    const a = await Admission.findById(admissionId).populate('patient', 'name mobile').lean();
+    const to = a?.patient?.mobile || normalizeMobile(a?.attendant?.phone);
+    if (!to) return;
+    await sendWappWithDoc({ to, msg: M.ipdDoc({ a, kind }, ctxOf(s)), docType: kind, docId: a._id, docName: `${kind === 'estimate' ? 'Estimate' : 'Interim-Bill'}-${a.admissionNo}`, event: `ipd.${kind}`, refType: 'Admission', refId: a._id });
+  },
+
+  'ipd.discharged': async ({ admissionId, force }) => {
+    const s = await getSettings();
+    if (!force && !on(s, 'ipd')) return;
+    const a = await Admission.findById(admissionId).populate('patient', 'name mobile').populate('branch', 'name').lean();
+    if (!a?.patient?.mobile) return;
+    await sendWappWithDoc({ to: a.patient.mobile, msg: M.discharged({ a }, ctxOf(s)), docType: 'discharge', docId: a._id, docName: `Discharge-Summary-${a.admissionNo}`, event: 'ipd.discharged', refType: 'Admission', refId: a._id });
   },
 
   'invoice.send': async ({ invoiceId, force }) => {
@@ -143,7 +177,7 @@ export const handlers = {
     if (!on(s, 'paymentReceipt')) return;
     const p = await Payment.findById(paymentId).populate('patient', 'name mobile').lean();
     if (!p?.patient) return;
-    await sendWapp({ to: p.patient.mobile, msg: M.advance({ p, balance }, ctxOf(s)), event: `advance.${p.kind}`, refType: 'Payment', refId: p._id });
+    await sendWappWithDoc({ to: p.patient.mobile, msg: M.advance({ p, balance }, ctxOf(s)), docType: 'receipt', docId: p._id, docName: `Receipt-${p.receiptNo || p._id}`, event: `advance.${p.kind}`, refType: 'Payment', refId: p._id });
   },
 
   'lead.autoreply': async ({ leadId }) => {

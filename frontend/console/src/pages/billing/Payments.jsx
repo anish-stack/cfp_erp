@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, QrCode } from 'lucide-react';
+import { CollectOnline, usePayConfig } from '@/components/billing/CollectOnline';
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable, Pagination } from '@/components/common/DataTable';
 import { StatCard } from '@/components/common/StatCard';
@@ -21,6 +22,8 @@ function AdvanceForm({ onDone }) {
   const [mode, setMode] = useState('cash');
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
+  const { data: payCfg } = usePayConfig();
+  const [online, setOnline] = useState(false);
   const save = useAction(() => post('/billing/advances', { branch: branchId, patient: patient._id, mode, amount: Number(amount), reference: reference || undefined }), { success: 'Advance received', invalidate: ['/billing/payments', 'advance'], onSuccess: onDone });
   if (!branchId) return <p className="text-sm text-destructive">Select a branch from the top bar first.</p>;
   return (
@@ -31,7 +34,11 @@ function AdvanceForm({ onDone }) {
         <Field label="Amount"><Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
       </div>
       <Field label="Reference"><Input value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
-      <div className="flex justify-end"><Button disabled={!patient || !(Number(amount) > 0)} loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div>
+      <div className="flex justify-end gap-2">
+        {payCfg?.enabled && <Button variant="outline" disabled={!patient || !(Number(amount) > 0)} onClick={() => setOnline(true)}><QrCode /> Collect online</Button>}
+        <Button disabled={!patient || !(Number(amount) > 0)} loading={save.isPending} onClick={() => save.mutate()}>Save</Button>
+      </div>
+      {patient && <CollectOnline open={online} onOpenChange={setOnline} purpose="advance" patient={patient} branch={branchId} defaultAmount={amount} onPaid={() => setTimeout(() => onDone?.(), 2000)} />}
     </div>
   );
 }

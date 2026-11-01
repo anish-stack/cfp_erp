@@ -50,8 +50,8 @@ export default function MyAppointments() {
   const cancel = async (a) => {
     if (!confirm(`Cancel appointment ${a.bookingId}?`)) return;
     try {
-      await post(`/portal/appointments/${a._id}/cancel`, {});
-      toast.success('Appointment cancelled');
+      const r = await post(`/portal/appointments/${a._id}/cancel`, {});
+      toast.success(r?.refund ? (r.refund.status === 'initiated' ? `Appointment cancelled · refund of ₹${r.refund.amount} started (5–7 working days)` : `Appointment cancelled · ${r.refund.message}`) : 'Appointment cancelled');
       qc.invalidateQueries({ queryKey: ['my-appts'] });
     } catch (e) {
       toast.error(errMsg(e));

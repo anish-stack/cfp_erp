@@ -19,6 +19,7 @@ export const INTEGRATION_KEYS = {
   smtp: { SMTP_HOST: {}, SMTP_PORT: { number: true }, SMTP_USER: {}, SMTP_PASS: { secret: true }, SMTP_FROM: {}, ALERT_EMAILS: {} },
   exotel: { EXOTEL_SID: {}, EXOTEL_API_KEY: { secret: true }, EXOTEL_API_TOKEN: { secret: true }, EXOTEL_SUBDOMAIN: { options: ['api.exotel.com', 'api.in.exotel.com'] }, EXOTEL_CALLER_ID: {}, EXOTEL_WEBHOOK_TOKEN: { secret: true } },
   whatsapp: { WAPP_API_URL: {}, WAPP_API_KEY: { secret: true }, WAPP_COUNTRY: {} },
+  razorpay: { RAZORPAY_KEY_ID: {}, RAZORPAY_KEY_SECRET: { secret: true }, RAZORPAY_WEBHOOK_SECRET: { secret: true } },
   ai: { AI_PROVIDER: { options: ['huggingface', 'groq', 'gemini', 'openrouter', 'custom'] }, HF_TOKEN: { secret: true }, HF_MODEL: {}, HF_API_URL: {} },
 };
 export const KEY_META = Object.fromEntries(Object.entries(INTEGRATION_KEYS).flatMap(([group, keys]) => Object.entries(keys).map(([k, m]) => [k, { ...m, group }])));

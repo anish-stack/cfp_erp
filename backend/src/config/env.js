@@ -60,6 +60,10 @@ const schema = z.object({
   WAPP_API_URL: z.string().url().default('https://api.wtap.sms4power.com/wapp/v2/api/send'),
   WAPP_API_KEY: z.string().optional().default(''),
   WAPP_COUNTRY: z.string().default('IN'),
+  // Razorpay (payment links, UPI QR, online booking payments) — also editable in Settings → Integrations
+  RAZORPAY_KEY_ID: z.string().optional().default(''),
+  RAZORPAY_KEY_SECRET: z.string().optional().default(''),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional().default(''),
   // OTP delivery: whatsapp | sms | both (sms = MSG91 OTP API)
   OTP_CHANNEL: z.enum(['whatsapp', 'sms', 'both']).default('whatsapp'),
   // signed public PDF links (invoice / prescription) handed to WhatsApp

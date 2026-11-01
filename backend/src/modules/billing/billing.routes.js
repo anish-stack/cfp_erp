@@ -13,6 +13,14 @@ import { Invoice, Payment, CreditNote } from '../../models/Billing.js';
 import { Patient } from '../../models/Patient.js';
 import { loadDocument, streamDocument } from '../../services/documents.js';
 import * as svc from './billing.service.js';
+import * as promo from './promo.service.js';
+import { Coupon, LoyaltyTxn } from '../../models/Loyalty.js';
+import { r2 } from '../../utils/invoiceMath.js';
+import { getSettings } from '../../models/Settings.js';
+import { qrTarget, qrDataUrl } from '../../services/branding.js';
+import { env } from '../../config/env.js';
+import * as paySvc from '../payments/payments.service.js';
+import { razorpayConfigured as rzpConfigured } from '../../services/razorpay.js';
 import * as notify from '../../services/notify.js';
 
 const r = Router();
@@ -44,6 +52,8 @@ const createBody = z
       .max(100),
     payments: z.array(z.object({ mode, amount, reference: z.string().max(60).optional() })).max(5).default([]),
     useAdvance: z.boolean().default(false),
+    couponCode: z.string().trim().max(30).optional().or(z.literal('')).transform((v) => v || undefined),
+    redeemPoints: z.number().int().min(0).max(1_000_000).optional(),
     notes: z.string().max(500).optional(),
   })
   .refine((d) => d.items.every((i) => i.product || i.description), 'Each line needs product or description');
@@ -62,6 +72,70 @@ const createInvoice = (source) =>
 
 r.post('/invoices', permit('billing.create'), validate({ body: createBody }), createInvoice('billing'));
 r.post('/pos/checkout', permit('pos.create'), validate({ body: createBody }), createInvoice('pos'));
+
+/** live price preview for POS / billing (coupon + points + GST exactly as the invoice will be) */
+r.post('/quote', permit.any('billing.create', 'pos.create'), validate({ body: createBody }), asyncHandler(async (req, res) => {
+  req.assertBranch(req.body.branch);
+  const q = await svc.priceInvoice(req.body);
+  const { balance, expiringSoon } = q.mobile && q.loyaltyCfg.enabled ? await promo.loyaltyBalance(q.mobile) : { balance: 0, expiringSoon: 0 };
+  const afterCoupon = q.lines.reduce((a, l) => a + (l.gross - l.discountAmt), 0) + q.redeemValue; // net before points
+  ok(res, {
+    ...q.totals,
+    coupon: q.couponQ ? { code: q.couponQ.coupon.code, discount: q.couponQ.discount, description: q.couponQ.coupon.description } : null,
+    loyalty: { enabled: !!q.loyaltyCfg.enabled, mobile: q.mobile, balance, expiringSoon, pointValue: q.loyaltyCfg.pointValue || 1, minRedeem: q.loyaltyCfg.minRedeem || 0,
+      maxRedeemable: promo.maxRedeemable(q.loyaltyCfg, balance, afterCoupon), redeemed: q.redeemPts, redeemValue: q.redeemValue, willEarn: q.earnPts },
+  });
+}));
+
+/* ---------------------------------------------------------------- coupons */
+const couponBody = z.object({
+  code: z.string().trim().regex(/^[A-Za-z0-9_-]{3,30}$/, '3–30 letters, digits, - or _').transform((v) => v.toUpperCase()),
+  description: z.string().max(200).optional(), type: z.enum(['percent', 'flat']), value: z.number().positive().max(1_000_000),
+  maxDiscount: z.number().min(0).nullable().optional(), minBill: z.number().min(0).default(0), appliesTo: z.enum(['all', 'products', 'services']).default('all'),
+  branches: z.array(objectId).max(50).default([]), validFrom: z.coerce.date().nullable().optional(), validTo: z.coerce.date().nullable().optional(),
+  usageLimit: z.number().int().min(0).nullable().optional(), perCustomer: z.number().int().min(0).max(100).default(1), isActive: z.boolean().default(true),
+}).refine((d) => d.type !== 'percent' || d.value <= 100, { message: 'Percent must be ≤ 100', path: ['value'] });
+
+r.get('/coupons', permit.any('pos.view', 'billing.view'), asyncHandler(async (_req, res) => {
+  ok(res, await Coupon.find().populate('branches', 'name code').sort({ createdAt: -1 }).lean());
+}));
+r.post('/coupons', permit.any('pos.edit', 'billing.edit'), validate({ body: couponBody }), asyncHandler(async (req, res) => {
+  if (await Coupon.exists({ code: req.body.code })) throw ApiError.conflict('Coupon code already exists');
+  const c = await Coupon.create({ ...req.body, createdBy: req.user._id });
+  audit(req, { action: 'coupon.create', entity: 'Coupon', entityId: c._id, after: { code: c.code } });
+  ok(res, c, 201);
+}));
+r.patch('/coupons/:id', permit.any('pos.edit', 'billing.edit'), validate({ params: idParam, body: couponBody.innerType().partial() }), asyncHandler(async (req, res) => {
+  const c = await Coupon.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
+  if (!c) throw ApiError.notFound('Coupon not found');
+  audit(req, { action: 'coupon.update', entity: 'Coupon', entityId: c._id });
+  ok(res, c);
+}));
+r.delete('/coupons/:id', permit.any('pos.delete', 'billing.delete'), validate({ params: idParam }), asyncHandler(async (req, res) => {
+  const c = await Coupon.findById(req.params.id);
+  if (!c) throw ApiError.notFound('Coupon not found');
+  if (c.used > 0) { c.isActive = false; await c.save(); return ok(res, { deactivated: true }); }
+  await c.deleteOne();
+  ok(res, { deleted: true });
+}));
+
+/* ---------------------------------------------------------------- loyalty */
+r.get('/loyalty/:mobile', permit.any('pos.view', 'billing.view'), asyncHandler(async (req, res) => {
+  const mobile = promo.mobileKey(req.params.mobile);
+  if (!mobile) throw ApiError.badRequest('Invalid mobile');
+  const cfg = await promo.loyaltyCfg();
+  const [{ balance, expiringSoon }, history] = await Promise.all([promo.loyaltyBalance(mobile), LoyaltyTxn.find({ mobile }).populate('branch', 'code').populate('by', 'name').sort({ createdAt: -1 }).limit(50).lean()]);
+  ok(res, { mobile, enabled: !!cfg.enabled, balance, expiringSoon, value: r2(balance * (cfg.pointValue || 1)), pointValue: cfg.pointValue || 1, history });
+}));
+r.post('/loyalty/:mobile/adjust', permit('billing.approve'), validate({ body: z.object({ points: z.number().int().refine((v) => v !== 0, 'Points cannot be 0'), note: z.string().trim().min(3).max(200) }) }), asyncHandler(async (req, res) => {
+  const mobile = promo.mobileKey(req.params.mobile);
+  if (!mobile) throw ApiError.badRequest('Invalid mobile');
+  if (req.body.points < 0 && (await promo.loyaltyBalance(mobile)).balance < -req.body.points) throw ApiError.badRequest('Not enough points');
+  const cfg = await promo.loyaltyCfg();
+  const t = await LoyaltyTxn.create({ mobile, type: 'adjust', points: req.body.points, note: req.body.note, by: req.user._id, expiresAt: req.body.points > 0 && cfg.expiryDays > 0 ? new Date(Date.now() + cfg.expiryDays * 864e5) : undefined });
+  audit(req, { action: 'loyalty.adjust', entity: 'LoyaltyTxn', entityId: t._id, after: { mobile, points: req.body.points } });
+  ok(res, t, 201);
+}));
 
 const listQuery = paging.extend({ status: z.string().optional(), type: z.string().optional(), source: z.string().optional(), from: ymd.optional(), to: ymd.optional(), patient: objectId.optional() });
 
@@ -94,6 +168,44 @@ async function loadInvoice(req) {
   req.assertBranch(inv.branch);
   return inv;
 }
+
+/** everything a 58/80 mm thermal receipt needs (printed by the browser on the counter printer) */
+r.get('/invoices/:id/thermal', permit.any('billing.view', 'pos.view'), validate({ params: idParam }), asyncHandler(async (req, res) => {
+  const inv = await loadInvoice(req);
+  await inv.populate([{ path: 'patient', select: 'name patientId mobile' }, { path: 'branch', select: 'name code address phone gstin' }, { path: 'doctor', select: 'name' }, { path: 'createdBy', select: 'name' }]);
+  const [s, payments] = await Promise.all([getSettings(), Payment.find({ invoice: inv._id }).sort({ createdAt: 1 }).select('receiptNo kind mode amount reference createdAt').lean()]);
+  // QR: balance due → scan-to-pay (Razorpay link, else static UPI); paid → website (Settings → Payments)
+  const mode = s.print?.thermalQr || 'payment';
+  let qr = null;
+  const due = inv.balance > 0.009 && !['cancelled', 'refunded'].includes(inv.status);
+  if (mode === 'payment' && due) {
+    const amt = Number(inv.balance).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    try {
+      if (s.payments?.onlineEnabled && rzpConfigured()) {
+        const link = await paySvc.linkForInvoice(inv, req.user);
+        if (link?.shortUrl) qr = { kind: 'payment', url: link.shortUrl, image: await qrDataUrl(link.shortUrl), label: `Scan to pay Rs ${amt}`, sub: 'UPI · card · net banking' };
+      }
+    } catch (e) {
+      // Razorpay down / not allowed → fall back to UPI QR below
+      qr = null;
+    }
+    if (!qr && s.payments?.upiId) {
+      const upi = `upi://pay?pa=${encodeURIComponent(s.payments.upiId)}&pn=${encodeURIComponent(s.payments.upiName || s.clinic?.name || '')}&am=${Number(inv.balance).toFixed(2)}&cu=INR&tn=${encodeURIComponent(inv.invoiceNo)}`;
+      qr = { kind: 'payment', url: upi, image: await qrDataUrl(upi), label: `Scan with any UPI app to pay Rs ${amt}`, sub: s.payments.upiId };
+    }
+  }
+  if (!qr && mode !== 'none') {
+    const qrUrl = qrTarget(s);
+    if (qrUrl) qr = { kind: 'website', url: qrUrl, image: await qrDataUrl(qrUrl), label: 'Scan to visit our website', sub: qrUrl.replace(/^https?:\/\//, '').replace(/\/$/, '') };
+  }
+  const loyaltyBalance = inv.loyalty?.mobile && s.loyalty?.enabled ? (await promo.loyaltyBalance(inv.loyalty.mobile)).balance : null;
+  ok(res, {
+    invoice: inv.toObject(), payments, loyaltyBalance,
+    clinic: { name: s.clinic?.name, phone: s.clinic?.phone, gstin: s.clinic?.gstin, website: s.clinic?.website, logo: s.clinic?.logoFile ? `${env.PUBLIC_API_URL.replace(/\/$/, '')}/api/v1/public/logo` : null },
+    print: { width: s.print?.thermalWidth || '80', footer: s.print?.thermalFooter || s.billing?.invoiceFooter || '' },
+    qr,
+  });
+}));
 
 r.get('/invoices/:id', permit.any('billing.view', 'pos.view'), validate({ params: idParam }), asyncHandler(async (req, res) => {
   const inv = await loadInvoice(req);

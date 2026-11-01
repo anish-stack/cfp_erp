@@ -4,6 +4,7 @@ import { Doctor } from '../../models/Doctor.js';
 import { DoctorSchedule } from '../../models/DoctorSchedule.js';
 import { ScheduleException } from '../../models/ScheduleException.js';
 import { Appointment, ACTIVE_STATUS } from '../../models/Appointment.js';
+import { SlotHold } from '../../models/SlotHold.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { generateSlots } from '../../utils/slots.js';
 import { weekdayOf, todayIST, daysBetween } from '../../utils/time.js';
@@ -14,7 +15,7 @@ const oid = (v) => new mongoose.Types.ObjectId(String(v));
  * Availability for a branch/date, one or all doctors.
  * @returns [{ doctor, closed, reason, slots, slotMinutes, capacity }]
  */
-export async function availability({ branchId, date, doctorId, staff = false, onlineOnly = false }) {
+export async function availability({ branchId, date, doctorId, staff = false, onlineOnly = false, excludeHold }) {
   const branch = await Branch.findById(branchId).lean();
   if (!branch || !branch.isActive) throw ApiError.notFound('Branch not found');
 
@@ -33,7 +34,7 @@ export async function availability({ branchId, date, doctorId, staff = false, on
   if (!doctors.length) return [];
 
   const ids = doctors.map((d) => d._id);
-  const [schedules, exceptions, bookedAgg] = await Promise.all([
+  const [schedules, exceptions, bookedAgg, heldAgg] = await Promise.all([
     DoctorSchedule.find({ branch: branch._id, weekday: weekdayOf(date), doctor: { $in: ids } }).lean(),
     ScheduleException.find({
       date,
@@ -47,10 +48,16 @@ export async function availability({ branchId, date, doctorId, staff = false, on
       { $match: { branch: branch._id, date, doctor: { $in: ids }, status: { $in: ACTIVE_STATUS }, slotKey: { $exists: true } } },
       { $group: { _id: { d: '$doctor', s: '$start' }, n: { $sum: 1 } } },
     ]),
+    // seats locked by patients who are paying right now
+    SlotHold.aggregate([
+      { $match: { branch: branch._id, date, doctor: { $in: ids }, expiresAt: { $gt: new Date() }, ...(excludeHold ? { _id: { $ne: oid(excludeHold) } } : {}) } },
+      { $group: { _id: { d: '$doctor', s: '$start' }, n: { $sum: 1 } } },
+    ]),
   ]);
 
   const booked = {};
   for (const b of bookedAgg) (booked[String(b._id.d)] ||= {})[b._id.s] = b.n;
+  for (const h of heldAgg) { const m = (booked[String(h._id.d)] ||= {}); m[h._id.s] = (m[h._id.s] || 0) + h.n; }
 
   return doctors.map((doctor) => {
     const did = String(doctor._id);

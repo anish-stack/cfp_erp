@@ -35,7 +35,7 @@ export default function NewInvoice() {
   return (
     <div>
       <PageHeader title="New invoice" description={appt.data ? `For appointment ${appt.data.bookingId}` : 'Consultation, treatment, procedure or pharmacy'} />
-      {loading ? <Skeleton className="h-96 w-full" /> : <Composer source="billing" initial={initial} onDone={(inv) => nav(`/billing/${inv._id}`, { replace: true })} />}
+      {loading ? <Skeleton className="h-96 w-full" /> : <Composer source="billing" initial={initial} onDone={(inv, o) => nav(`/billing/${inv._id}${o?.collect ? '?collect=1' : ''}`, { replace: true })} />}
     </div>
   );
 }

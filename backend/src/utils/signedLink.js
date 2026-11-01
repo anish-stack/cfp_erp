@@ -5,7 +5,7 @@ import { env } from '../config/env.js';
  * Expiring, unguessable public links for documents that must be fetched by the
  * WhatsApp provider (invoice / prescription PDFs). HMAC-SHA256 over type|id|exp.
  */
-export const DOC_TYPES = ['invoice', 'rx', 'receipt', 'slip'];
+export const DOC_TYPES = ['invoice', 'rx', 'receipt', 'slip', 'discharge', 'interim', 'estimate', 'admission'];
 
 const secret = () =>
   env.DOC_LINK_SECRET || crypto.createHmac('sha256', env.JWT_ACCESS_SECRET).update('cpf-doc-links').digest('hex');

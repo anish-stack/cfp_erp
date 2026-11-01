@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Printer, IndianRupee, Undo2, XCircle, MessageCircle } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { CollectOnline, usePayConfig } from '@/components/billing/CollectOnline';
+import { Printer, IndianRupee, Undo2, XCircle, MessageCircle, ReceiptText, QrCode } from 'lucide-react';
+import { toast } from 'sonner';
+import { printThermal } from '@/lib/thermalReceipt';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +22,9 @@ import { inr, fmtDateTime, ageOf } from '@/lib/utils';
 export default function InvoiceDetail() {
   const { id } = useParams();
   const nav = useNavigate();
+  const [sp, setSp] = useSearchParams();
+  const [online, setOnline] = useState(sp.get('collect') === '1');
+  const { data: payCfg } = usePayConfig();
   const can = useCan();
   const { data, isLoading } = useGet(['/billing/invoices', id], `/billing/invoices/${id}`);
   const [dlg, setDlg] = useState(null);
@@ -43,7 +49,9 @@ export default function InvoiceDetail() {
         description={`${fmtDateTime(i.createdAt)} · ${i.branch?.name} · by ${i.createdBy?.name || '—'}`}
         actions={<>
           <Button variant="outline" onClick={() => openFile(`/billing/invoices/${id}/pdf`)}><Printer /> Print / PDF</Button>
+          <Button variant="outline" onClick={() => printThermal(id).catch((e) => toast.error(e?.response?.data?.message || e.message))}><ReceiptText /> Thermal print</Button>
           {i.status !== 'cancelled' && (i.patient || i.customer?.phone) && <Button variant="outline" loading={sendWa.isPending} onClick={() => sendWa.mutate()}><MessageCircle /> WhatsApp</Button>}
+          {open && i.balance > 0 && payCfg?.enabled && (can('billing.create') || can('pos.create')) && <Button variant="outline" onClick={() => setOnline(true)}><QrCode /> Collect online</Button>}
           {open && i.balance > 0 && (can('billing.create') || can('pos.create')) && <Button onClick={() => { setPay({ mode: 'cash', amount: i.balance, reference: '' }); setDlg('pay'); }}><IndianRupee /> Collect</Button>}
           {open && can('billing.approve') && i.paid > 0 && <Button variant="outline" onClick={() => setDlg('return')}><Undo2 /> Return / refund</Button>}
           {open && can('billing.delete') && i.paid - i.refunded <= 0 && <Button variant="outline" className="text-destructive" onClick={() => setDlg('cancel')}><XCircle /> Cancel</Button>}
@@ -73,11 +81,12 @@ export default function InvoiceDetail() {
               {i.patient && <button className="text-xs text-primary hover:underline" onClick={() => nav(`/patients/${i.patient._id}`)}>{i.patient.patientId} · {[i.patient.gender, ageOf(i.patient) && `${ageOf(i.patient)}y`, i.patient.mobile].filter(Boolean).join(' · ')}</button>}
               {i.doctor && <p className="text-muted-foreground">Doctor: {i.doctor.name}</p>}
               <div className="mt-3 space-y-1 border-t pt-3">
-                {[['Subtotal', i.subtotal], ['Discount', -i.discount], ['Taxable', i.taxable], ['CGST', i.cgst], ['SGST', i.sgst], ['Round off', i.roundOff]].map(([k, v]) => (v ? <div key={k} className="flex justify-between"><span className="text-muted-foreground">{k}</span><span>{inr(v)}</span></div> : null))}
+                {[['Subtotal', i.subtotal], ['Discount', -Math.round((i.discount - (i.coupon?.discount || 0) - (i.loyalty?.redeemValue || 0)) * 100) / 100], [`Coupon ${i.coupon?.code || ''}`, -(i.coupon?.discount || 0)], [`Loyalty (${i.loyalty?.redeemed || 0} pts)`, -(i.loyalty?.redeemValue || 0)], ['Taxable', i.taxable], ['CGST', i.cgst], ['SGST', i.sgst], ['Round off', i.roundOff]].map(([k, v]) => (v ? <div key={k} className="flex justify-between"><span className="text-muted-foreground">{k}</span><span>{inr(v)}</span></div> : null))}
                 <div className="flex justify-between text-base font-semibold"><span>Grand total</span><span>{inr(i.grandTotal)}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span>{inr(i.paid)}</span></div>
                 {i.refunded > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Refunded</span><span>{inr(i.refunded)}</span></div>}
                 <div className="flex justify-between font-semibold text-amber-700"><span>Balance</span><span>{inr(i.balance)}</span></div>
+                {i.loyalty?.earned > 0 && i.status !== 'cancelled' && <p className="text-xs font-medium text-emerald-700">+{i.loyalty.earned} loyalty points earned</p>}
               </div>
               {i.cancelReason && <p className="text-xs text-destructive">Cancelled: {i.cancelReason}</p>}
             </CardContent>
@@ -132,6 +141,7 @@ export default function InvoiceDetail() {
           </div>
         </DialogContent>
       </Dialog>
+      {i && <CollectOnline open={online && i.balance > 0} onOpenChange={(o) => { setOnline(o); if (!o && sp.get('collect')) { sp.delete('collect'); setSp(sp, { replace: true }); } }} purpose="invoice" invoice={i} onPaid={() => setTimeout(() => setOnline(false), 2500)} />}
       <ConfirmDialog open={dlg === 'cancel'} onOpenChange={(o) => !o && setDlg(null)} title="Cancel invoice" description="All products are restocked. This cannot be undone." reason destructive confirmText="Cancel invoice" loading={cancel.isPending} onConfirm={(r) => cancel.mutate(r)} />
     </div>
   );

@@ -31,7 +31,7 @@ const Img = ({ src, alt = '', className, placeholder = true }) =>
 
 const Section = ({ children, className, style, id }) => <section id={id} className={cx('px-4 py-12 sm:px-6 md:py-16', className)} style={style}><div className="mx-auto max-w-6xl">{children}</div></section>;
 const bgClass = (bg) => ({ white: 'bg-white', tint: 'bg-[color:var(--lp-tint)]', dark: 'bg-[color:var(--lp-dark)] text-white', brand: 'bg-[color:var(--lp-primary)] text-white' }[bg] || 'bg-white');
-const Eyebrow = ({ children }) => (children ? <span className="mb-3 inline-block rounded-full border border-[color:var(--lp-primary)]/30 px-3 py-1 text-xs font-medium text-[color:var(--lp-primary)]">{children}</span> : null);
+const Eyebrow = ({ children, light }) => (children ? <span className={cx('mb-3 inline-block rounded-full border px-3 py-1 text-xs font-medium', light ? 'border-white/40 bg-white/10 text-white' : 'border-[color:var(--lp-primary)]/30 text-[color:var(--lp-primary)]')}>{children}</span> : null);
 const cols = (n) => ({ 1: 'grid-cols-1', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-2 lg:grid-cols-3', 4: 'sm:grid-cols-2 lg:grid-cols-4' }[Number(n) || 3]);
 
 const ytId = (u = '') => (u.match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([\w-]{11})/) || [])[1];
@@ -60,15 +60,19 @@ const B = {
   ),
 
   hero: ({ p }) => {
-    const dark = p.style === 'dark' || p.style === 'brand';
+    const dark = p.style === 'dark' || p.style === 'brand' || p.style === 'gradient';
+    const bgStyle = p.bgImage
+      ? { backgroundImage: `linear-gradient(rgba(0,0,0,.45),rgba(0,0,0,.45)),url("${encodeURI(p.bgImage)}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
+      : p.style === 'gradient' ? { backgroundImage: 'linear-gradient(135deg, var(--lp-dark) 0%, var(--lp-primary) 100%)' } : undefined;
     return (
-      <section className={cx('relative overflow-hidden', p.style === 'brand' ? 'bg-[color:var(--lp-primary)] text-white' : p.style === 'dark' ? 'bg-[color:var(--lp-dark)] text-white' : 'bg-white')}
-        style={p.bgImage ? { backgroundImage: `linear-gradient(rgba(0,0,0,.45),rgba(0,0,0,.45)),url("${encodeURI(p.bgImage)}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
-        {!dark && !p.bgImage && <div className="pointer-events-none absolute -right-24 top-0 h-full w-1/2 skew-x-[-12deg] bg-[color:var(--lp-primary)] opacity-90 max-md:hidden" />}
+      <section className={cx('relative overflow-hidden', p.style === 'brand' ? 'bg-[color:var(--lp-primary)] text-white' : dark ? 'bg-[color:var(--lp-dark)] text-white' : 'bg-white')} style={bgStyle}>
+        {p.style === 'gradient' && <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/10 blur-2xl" />}
+        {!dark && !p.bgImage && p.align === 'center' && <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,var(--lp-tint),transparent_70%)]" />}
+        {!dark && !p.bgImage && p.align !== 'center' && <div className="pointer-events-none absolute -right-24 top-0 h-full w-1/2 skew-x-[-12deg] bg-[color:var(--lp-primary)] opacity-90 max-md:hidden" />}
         <div className="relative mx-auto grid max-w-6xl items-center gap-8 px-4 py-12 sm:px-6 md:grid-cols-2 md:py-20">
-          <div className={cx(p.align === 'center' && 'md:col-span-2 text-center')}>
-            <Eyebrow>{p.eyebrow}</Eyebrow>
-            <h1 className={cx('text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl', !dark && !p.bgImage && 'text-[color:var(--lp-primary)]')}>{p.title}</h1>
+          <div className={cx(p.align === 'center' && 'mx-auto max-w-3xl text-center md:col-span-2', p.align === 'image_left' && 'md:order-2')}>
+            <Eyebrow light={dark || !!p.bgImage}>{p.eyebrow}</Eyebrow>
+            <h1 className={cx('font-extrabold leading-tight tracking-tight', p.align === 'center' ? 'text-4xl sm:text-6xl' : 'text-4xl sm:text-5xl', !dark && !p.bgImage && 'text-[color:var(--lp-primary)]')}>{p.title}</h1>
             {p.subtitle && <p className={cx('mt-4 text-xl sm:text-2xl', dark || p.bgImage ? 'text-white/85' : 'text-slate-800')}>{p.subtitle}</p>}
             <div className={cx('mt-6 flex flex-wrap gap-3', p.align === 'center' && 'justify-center')}>
               {p.ctaText && <A href={p.ctaLink || '#form'} className="rounded-md bg-[color:var(--lp-primary)] px-5 py-3 font-semibold text-white shadow hover:opacity-90" style={dark ? { background: 'var(--lp-accent)', color: '#111' } : undefined}>{p.ctaText}</A>}
@@ -125,6 +129,14 @@ const B = {
       <div className={cx('mt-8 grid gap-5', cols(p.columns))}>
         {(p.items || []).map((it, i) => {
           const Ic = ICONS[it.icon] || CheckCircle2;
+          if (p.style === 'minimal' || p.style === 'numbered') return (
+            <div key={i} className="flex gap-4">
+              {p.style === 'numbered'
+                ? <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[color:var(--lp-primary)] text-sm font-bold text-white">{i + 1}</span>
+                : <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[color:var(--lp-tint)]">{it.image ? <img src={it.image} alt="" className="h-6 w-6 object-contain" /> : <Ic className="h-6 w-6 text-[color:var(--lp-primary)]" />}</span>}
+              <div><h3 className="font-semibold text-slate-900">{it.title}</h3>{it.text && <p className="mt-1 text-sm text-slate-600">{it.text}</p>}</div>
+            </div>
+          );
           return (
             <div key={i} className="rounded-lg bg-[color:var(--lp-tint)] p-6 transition hover:-translate-y-0.5 hover:shadow-md">
               {it.image ? <img src={it.image} alt="" className="mb-4 h-10 w-10 object-contain" /> : <Ic className="mb-4 h-8 w-8 text-[color:var(--lp-primary)]" />}
@@ -153,9 +165,9 @@ const B = {
         {p.heading && <h2 className="text-2xl font-bold sm:text-3xl">{p.heading}</h2>}
         {p.intro && <p className="text-sm opacity-75">{p.intro}</p>}
       </div>
-      <div className="space-y-3">
+      <div className={p.style === 'grid' ? 'grid gap-3 sm:grid-cols-2' : 'space-y-3'}>
         {(p.items || []).map((it, i) => (
-          <div key={i} className="rounded-lg border bg-white p-4 text-slate-900 shadow-sm">
+          <div key={i} className={cx('rounded-lg border bg-white p-4 text-slate-900 shadow-sm', p.style === 'grid' && 'border-l-4 border-l-[color:var(--lp-primary)]')}>
             <h3 className="font-semibold">{it.title}</h3>
             {it.text && <p className="mt-1 text-sm text-slate-600">{it.text}</p>}
           </div>
@@ -185,8 +197,8 @@ const B = {
   ),
 
   cta: ({ p }) => (
-    <section className="px-4 py-14 text-center text-white sm:px-6" style={{ background: p.bgColor || 'var(--lp-primary)', backgroundImage: p.bgImage ? `linear-gradient(rgba(0,0,0,.4),rgba(0,0,0,.4)),url("${encodeURI(p.bgImage)}")` : undefined, backgroundSize: 'cover' }}>
-      <div className="mx-auto max-w-3xl">
+    <section className={cx('text-center text-white', p.style === 'card' ? 'bg-white px-4 py-10 sm:px-6' : 'px-4 py-14 sm:px-6')} style={p.style === 'card' ? undefined : { background: p.bgColor || 'var(--lp-primary)', backgroundImage: p.bgImage ? `linear-gradient(rgba(0,0,0,.4),rgba(0,0,0,.4)),url("${encodeURI(p.bgImage)}")` : undefined, backgroundSize: 'cover' }}>
+      <div className={cx('mx-auto', p.style === 'card' ? 'max-w-5xl rounded-3xl px-6 py-12 shadow-xl' : 'max-w-3xl')} style={p.style === 'card' ? { backgroundImage: `linear-gradient(135deg, ${p.bgColor || 'var(--lp-primary)'}, var(--lp-dark))` } : undefined}>
         {p.eyebrow && <p className="mb-2 text-sm opacity-90">{p.eyebrow}</p>}
         {p.heading && <h2 className="text-xl font-bold sm:text-2xl">{p.heading}</h2>}
         {p.text && <p className="mt-2 opacity-90">{p.text}</p>}
@@ -278,6 +290,54 @@ const B = {
     </footer>
   ),
 
+  steps: ({ p }) => (
+    <Section className={bgClass(p.bg || 'white')}>
+      {p.heading && <h2 className="mb-2 text-center text-3xl font-bold">{p.heading}</h2>}
+      {p.subheading && <p className="mx-auto mb-8 max-w-2xl text-center opacity-75">{p.subheading}</p>}
+      {p.style === 'timeline' ? (
+        <div className="relative mt-10 grid gap-8 md:grid-cols-4">
+          <div className="absolute left-0 right-0 top-5 hidden h-0.5 bg-[color:var(--lp-primary)]/20 md:block" />
+          {(p.items || []).map((it, i) => (
+            <div key={i} className="relative text-center">
+              <span className="relative z-10 mx-auto grid h-10 w-10 place-items-center rounded-full bg-[color:var(--lp-primary)] font-bold text-white ring-8 ring-white">{i + 1}</span>
+              <h3 className="mt-3 font-semibold">{it.title}</h3>
+              {it.text && <p className="mt-1 text-sm opacity-75">{it.text}</p>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mx-auto mt-8 max-w-3xl space-y-4">
+          {(p.items || []).map((it, i) => (
+            <div key={i} className="flex gap-4 rounded-xl border bg-white p-4 text-slate-900">
+              <span className="text-3xl font-extrabold text-[color:var(--lp-primary)]/30">{String(i + 1).padStart(2, '0')}</span>
+              <div><h3 className="font-semibold">{it.title}</h3>{it.text && <p className="mt-1 text-sm text-slate-600">{it.text}</p>}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  ),
+
+  pricing: ({ p }) => (
+    <Section className={bgClass(p.bg || 'tint')}>
+      {p.heading && <h2 className="text-center text-3xl font-bold">{p.heading}</h2>}
+      {p.subheading && <p className="mx-auto mt-2 max-w-2xl text-center opacity-75">{p.subheading}</p>}
+      <div className={cx('mt-10 grid items-stretch gap-6', cols(Math.min(4, (p.items || []).length || 3)))}>
+        {(p.items || []).map((it, i) => (
+          <div key={i} className={cx('relative flex flex-col rounded-2xl border bg-white p-6 text-slate-900', it.highlight ? 'border-2 border-[color:var(--lp-primary)] shadow-xl' : 'shadow-sm')}>
+            {it.highlight && <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[color:var(--lp-primary)] px-3 py-0.5 text-xs font-semibold text-white">Most chosen</span>}
+            <h3 className="text-lg font-semibold">{it.title}</h3>
+            <p className="mt-3 text-3xl font-extrabold text-[color:var(--lp-primary)]">{it.price}</p>
+            {it.note && <p className="text-sm text-slate-500">{it.note}</p>}
+            <ul className="mt-4 flex-1 space-y-2 text-sm">{String(it.features || '').split('\n').filter(Boolean).map((f, j) => <li key={j} className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--lp-primary)]" />{f}</li>)}</ul>
+            {it.buttonText && <A href={it.buttonLink || '#form'} className={cx('mt-6 rounded-lg px-4 py-2.5 text-center font-semibold', it.highlight ? 'bg-[color:var(--lp-primary)] text-white' : 'border border-[color:var(--lp-primary)] text-[color:var(--lp-primary)]')}>{it.buttonText}</A>}
+          </div>
+        ))}
+      </div>
+      {p.note && <p className="mt-6 text-center text-xs opacity-60">{p.note}</p>}
+    </Section>
+  ),
+
   spacer: ({ p }) => <div style={{ height: Math.min(400, Number(p.height) || 40) }} />,
 };
 
@@ -302,10 +362,11 @@ export function fontHref(font) {
   return `https://fonts.googleapis.com/css2?family=${encodeURIComponent(font || 'Inter')}:wght@400;500;600;700;800&display=swap`;
 }
 
-export default function LandingPage({ blocks = [], design, renderForm, clinic }) {
+export default function LandingPage({ blocks = [], design, renderForm, clinic, children }) {
   return (
     <div className="min-h-screen bg-white text-slate-900" style={designVars(design)}>
       {blocks.filter((b) => !b.hidden).map((b) => <Block key={b.id} block={b} design={design} renderForm={renderForm} clinic={clinic} />)}
+      {children}
     </div>
   );
 }

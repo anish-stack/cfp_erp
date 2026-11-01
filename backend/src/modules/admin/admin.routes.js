@@ -29,7 +29,16 @@ const settingsBody = z.object({
   clinic: z.object({ name: z.string().max(120), legalName: z.string().max(160), tagline: z.string().max(160), website: z.string().max(200), phone: z.string().max(20), whatsapp: z.string().max(20), email: z.string().max(120), gstin: z.string().max(15), address: z.string().max(400), logoUrl: z.string().max(500) }).partial(),
   billing: z.object({ gstEnabled: z.boolean(), taxInclusive: z.boolean(), consultationGst: z.number().min(0).max(28), invoiceFooter: z.string().max(300), allowNegativeStock: z.boolean(), showLogoOnPdf: z.boolean() }).partial(),
   inventory: z.object({ expiryAlertDays: z.number().int().min(7).max(365) }).partial(),
-  notifications: z.object(Object.fromEntries(['sms', 'whatsapp', 'email', 'welcome', 'appointmentUpdates', 'checkinToken', 'noShow', 'reminders', 'prescription', 'invoice', 'paymentReceipt', 'refunds', 'followupReminders', 'leadAutoReply', 'staffLeadAlert', 'dailyStockAlerts'].map((k) => [k, z.boolean()]))).partial(),
+  loyalty: z.object({ enabled: z.boolean(), earnPer100: z.number().min(0).max(100), pointValue: z.number().min(0.01).max(100), minRedeem: z.number().int().min(0).max(100000), maxRedeemPct: z.number().min(0).max(100), expiryDays: z.number().int().min(0).max(3650), earnOnServices: z.boolean() }).partial(),
+  payments: z.object({
+    onlineEnabled: z.boolean(), linkExpiryHours: z.number().int().min(1).max(24 * 30), sendLinkOnWhatsapp: z.boolean(),
+    upiId: z.string().trim().max(60).refine((v) => !v || /^[\w.-]{2,}@[a-zA-Z]{2,}$/.test(v), 'UPI ID like clinic@okicici'), upiName: z.string().max(60),
+    appointment: z.object({ required: z.boolean(), amountMode: z.enum(['doctor_fee', 'fixed']), amount: z.number().min(1).max(100000), note: z.string().max(200) }).partial(),
+  }).partial(),
+  print: z.object({ qrUrl: z.string().max(300).refine((v) => !v || /^https?:\/\//.test(v), 'Must start with http(s)://'), showQr: z.boolean(), thermalWidth: z.enum(['58', '80']), thermalQr: z.enum(['payment', 'website', 'none']), thermalFooter: z.string().max(200) }).partial(),
+  features: z.object({ ipd: z.boolean(), exotel: z.boolean(), marketing: z.boolean() }).partial(),
+  ipd: z.object({ doctorVisitRate: z.number().min(0).max(100000), autoChargeRounds: z.boolean(), otRooms: z.array(z.string().trim().min(1).max(30)).max(20), graceHours: z.number().min(0).max(12), visitingHours: z.string().max(120), passRules: z.string().max(300) }).partial(),
+  notifications: z.object(Object.fromEntries(['sms', 'whatsapp', 'email', 'welcome', 'appointmentUpdates', 'checkinToken', 'noShow', 'reminders', 'prescription', 'ipd', 'invoice', 'paymentReceipt', 'refunds', 'followupReminders', 'leadAutoReply', 'staffLeadAlert', 'dailyStockAlerts'].map((k) => [k, z.boolean()]))).partial(),
   theme: z.object({
     console: z.object({ primary: z.string().regex(/^#[0-9a-f]{6}$/i), sidebar: z.string().regex(/^#[0-9a-f]{6}$/i), radius: z.number().min(0).max(20) }).partial(),
     booking: z.object({ primary: z.string().regex(/^#[0-9a-f]{6}$/i), background: z.string().regex(/^#[0-9a-f]{6}$/i) }).partial(),
@@ -45,6 +54,7 @@ const settingsBody = z.object({
 }).partial();
 
 r.patch('/settings', permit('settings.manage_settings'), validate({ body: settingsBody }), asyncHandler(async (req, res) => {
+  if (req.body.features && !req.isSuperAdmin) throw ApiError.forbidden('Only the Super Admin can enable or disable modules');
   const before = await getSettings();
   const $set = {};
   // nested objects (theme.console.primary …) flattened to dot paths so partial updates don't wipe siblings

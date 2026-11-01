@@ -17,6 +17,7 @@ import { User } from '../../models/User.js';
 import * as exotel from '../../services/exotel.js';
 import { finishCall } from './calls.service.js';
 import { cfg } from '../../services/runtimeConfig.js';
+import { requireFeature } from '../../middleware/feature.js';
 
 const r = Router();
 r.use(auth, branchScope);
@@ -31,7 +32,9 @@ async function callScope(req) {
 
 r.get('/config', permit.any('leads.view', 'patients.view'), asyncHandler(async (req, res) => {
   const me = await User.findById(req.user._id).select('phone').lean();
-  const out = { enabled: exotel.exotelConfigured(), callerId: cfg.EXOTEL_CALLER_ID || null, agentPhone: me?.phone || null };
+  const { featureOn } = await import('../../models/Settings.js');
+  const on = await featureOn('exotel');
+  const out = { feature: on, enabled: on && exotel.exotelConfigured(), callerId: cfg.EXOTEL_CALLER_ID || null, agentPhone: me?.phone || null };
   // callback URLs carry the secret token → only for admins who configure Exotel
   if (hasPerm(req, 'settings.manage_settings')) {
     out.webhooks = { status: exotel.webhookUrl('status'), inbound: exotel.webhookUrl('inbound'), connect: exotel.webhookUrl('connect') };
@@ -41,7 +44,7 @@ r.get('/config', permit.any('leads.view', 'patients.view'), asyncHandler(async (
 }));
 
 /** Click-to-call: Exotel rings the agent, then the customer */
-r.post('/', permit.any('leads.edit', 'patients.edit'), validate({ body: z.object({ lead: objectId.optional(), patient: objectId.optional(), phone: z.string().min(10).max(15).optional() }).refine((b) => b.lead || b.patient || b.phone, 'lead, patient or phone required') }), asyncHandler(async (req, res) => {
+r.post('/', permit.any('leads.edit', 'patients.edit'), requireFeature('exotel'), validate({ body: z.object({ lead: objectId.optional(), patient: objectId.optional(), phone: z.string().min(10).max(15).optional() }).refine((b) => b.lead || b.patient || b.phone, 'lead, patient or phone required') }), asyncHandler(async (req, res) => {
   let phone = req.body.phone;
   let lead = null;
   let patient = null;

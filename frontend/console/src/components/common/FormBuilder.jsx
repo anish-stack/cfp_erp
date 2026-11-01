@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { ImageField } from './ImageField';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -81,6 +82,8 @@ export function renderInput(f, field) {
       );
     case 'multiselect':
       return <MultiCheck options={f.options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o))} field={field} />;
+    case 'image':
+      return <ImageField value={field.value} onChange={field.onChange} uploadUrl={f.uploadUrl} round={f.round} />;
     case 'switch':
       return <div className="pt-1"><Switch checked={!!field.value} onCheckedChange={field.onChange} /></div>;
     default:

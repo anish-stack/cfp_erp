@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Cloud, Mail, PhoneCall, MessageCircle, Settings2, Sparkles, Eye, EyeOff, CheckCircle2, XCircle, PlugZap, RotateCcw } from 'lucide-react';
+import { Cloud, Mail, PhoneCall, MessageCircle, Settings2, Sparkles, CreditCard, Eye, EyeOff, CheckCircle2, XCircle, PlugZap, RotateCcw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
@@ -16,6 +16,7 @@ const GROUPS = {
   smtp: { title: 'Email (SMTP)', icon: Mail, hint: 'Lead alerts, daily stock alerts. Port 465 = SSL, 587 = STARTTLS.', test: 'smtp', testTo: 'Send test mail to (email)' },
   exotel: { title: 'Exotel (dialer, IVR, recordings)', icon: PhoneCall, hint: 'Exotel dashboard → Settings → API. Mumbai accounts use api.in.exotel.com.', test: 'exotel' },
   whatsapp: { title: 'WhatsApp (sms4power WAPP)', icon: MessageCircle, hint: 'OTP, booking, prescription, invoice messages.', test: 'whatsapp', testTo: 'Send test message to (mobile)' },
+  razorpay: { title: 'Razorpay (payment links, UPI QR, online booking)', icon: CreditCard, hint: 'Razorpay Dashboard → Account & Settings → API keys. Webhook: Dashboard → Webhooks → URL <your API>/api/v1/payments/webhook, events payment_link.paid, payment_link.expired, qr_code.credited, payment.captured — copy the same secret here. Test keys (rzp_test_…) for trial.', test: 'razorpay' },
   ai: { title: 'AI writer', icon: Sparkles, hint: 'Writes CMS landing pages and rewrites sections. Free options: Groq (console.groq.com/keys) or Google Gemini (aistudio.google.com/apikey). Hugging Face free credits are very small. OpenRouter: only “:free” models are used automatically.', test: 'ai' },
 };
 const LABEL = {
@@ -26,6 +27,7 @@ const LABEL = {
   SMTP_HOST: 'SMTP host', SMTP_PORT: 'SMTP port', SMTP_USER: 'SMTP username', SMTP_PASS: 'SMTP password', SMTP_FROM: 'From address', ALERT_EMAILS: 'Alert emails (comma separated)',
   EXOTEL_SID: 'Account SID', EXOTEL_API_KEY: 'API key', EXOTEL_API_TOKEN: 'API token', EXOTEL_SUBDOMAIN: 'API host (region)', EXOTEL_CALLER_ID: 'Caller ID (ExoPhone)', EXOTEL_WEBHOOK_TOKEN: 'Webhook token (random 32+ chars)',
   WAPP_API_URL: 'API URL', WAPP_API_KEY: 'API key', WAPP_COUNTRY: 'Country code',
+  RAZORPAY_KEY_ID: 'Key ID (rzp_live_… / rzp_test_…)', RAZORPAY_KEY_SECRET: 'Key secret', RAZORPAY_WEBHOOK_SECRET: 'Webhook secret',
   AI_PROVIDER: 'AI provider', HF_TOKEN: 'API key / token of the selected provider', HF_MODEL: 'Model (auto recommended)', HF_API_URL: 'API URL (only for Hugging Face / Custom)',
 };
 const SUBHEAD = { S3_BUCKET: 'AWS S3', R2_ACCOUNT_ID: 'Cloudflare R2', CLOUDINARY_CLOUD_NAME: 'Cloudinary' };

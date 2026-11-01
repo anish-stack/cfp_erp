@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Plus, RefreshCw, Trash2, Copy, Upload, ImageOff, PhoneCall, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -17,7 +18,7 @@ import { patch, post, del, api, API_URL } from '@/lib/api';
 import { useCallConfig } from '@/components/clinic/Calling';
 import { useBranches } from '@/hooks/queries';
 import { applyTheme, PRESETS } from '@/lib/theme';
-import { useCan } from '@/store/auth';
+import { useCan, useAuth } from '@/store/auth';
 import { IntegrationSettings } from '@/components/admin/IntegrationSettings';
 import { fmtDateTime } from '@/lib/utils';
 
@@ -255,6 +256,72 @@ function Stages() {
   );
 }
 
+/** optional modules — Super Admin only */
+function ModulesCard({ s, setS }) {
+  const me = useAuth((x) => x.me);
+  const isSuper = me?.permissions?.includes('*');
+  const qc = useQueryClient();
+  const f = s.features || {};
+  const save = useAction(() => patch('/admin/settings', { features: { ipd: !!f.ipd, exotel: !!f.exotel, marketing: !!f.marketing } }), {
+    success: 'Modules updated', invalidate: ['/admin/settings'],
+    onSuccess: async () => { const { loadMe } = await import('@/lib/session'); await loadMe(); qc.invalidateQueries(); },
+  });
+  const set = (k, v) => setS((x) => ({ ...x, features: { ...x.features, [k]: v } }));
+  return (
+    <Card className="p-4">
+      <p className="mb-1 font-semibold">Optional modules</p>
+      <p className="mb-3 text-sm text-muted-foreground">Switch on only what this clinic uses. A module that is off is hidden from every console and its APIs are blocked.{!isSuper && ' Only the Super Admin can change these.'}</p>
+      <Toggle label="IPD — admissions, beds, OT, nursing, insurance claims" hint="Bed board, admissions, discharge billing, packages, IPD reports" checked={!!f.ipd} disabled={!isSuper} onChange={(v) => set('ipd', v)} />
+      <Toggle label="Exotel — click-to-call, IVR & call recordings" hint="Off: calls are dialled from the user's own phone and logged manually" checked={!!f.exotel} disabled={!isSuper} onChange={(v) => set('exotel', v)} />
+      <Toggle label="Marketing — bulk WhatsApp campaigns" hint="Offers, package & lab prices, health tips to patients and leads (opt-outs respected)" checked={!!f.marketing} disabled={!isSuper} onChange={(v) => set('marketing', v)} />
+      {isSuper && <div className="flex justify-end pt-3"><Button loading={save.isPending} onClick={() => save.mutate()}>Save modules</Button></div>}
+    </Card>
+  );
+}
+
+function PaymentsCard({ s, set, editable, SaveBtn, save }) {
+  const { data: cfgp } = useGet('pay-config', '/payments/config');
+  const p = s.payments || {};
+  const ap = p.appointment || {};
+  const setAp = (k, v) => set('payments', 'appointment', { ...ap, [k]: v });
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div><p className="font-semibold">Online payments (Razorpay)</p><p className="text-xs text-muted-foreground">Payment links, UPI QR and online booking payments. Keys: Settings → Integrations → Razorpay.</p></div>
+          <Badge variant={cfgp?.configured ? 'success' : 'warning'}>{cfgp?.configured ? 'Keys added' : 'Keys missing'}</Badge>
+        </div>
+        <Toggle label="Enable online payments in the console" hint="Shows “Collect online” (UPI QR / payment link) on bills, POS, IPD deposits and advances" checked={p.onlineEnabled} disabled={!editable || !cfgp?.configured} onChange={(v) => set('payments', 'onlineEnabled', v)} />
+        <Toggle label="Send payment links on WhatsApp by default" checked={p.sendLinkOnWhatsapp !== false} disabled={!editable} onChange={(v) => set('payments', 'sendLinkOnWhatsapp', v)} />
+        <div className="grid gap-3 pt-3 sm:grid-cols-3">
+          <Field label="Link / QR valid for (hours)"><Input type="number" min={1} disabled={!editable} value={p.linkExpiryHours ?? 48} onChange={(e) => set('payments', 'linkExpiryHours', Number(e.target.value))} /></Field>
+          <Field label="UPI ID (fallback QR)" hint="Used on thermal receipts when Razorpay is off"><Input disabled={!editable} placeholder="clinic@okicici" value={p.upiId || ''} onChange={(e) => set('payments', 'upiId', e.target.value.trim())} /></Field>
+          <Field label="UPI payee name"><Input disabled={!editable} value={p.upiName || ''} onChange={(e) => set('payments', 'upiName', e.target.value)} /></Field>
+          <Field label="QR on thermal receipt">
+            <Select disabled={!editable} value={s.print?.thermalQr || 'payment'} onChange={(e) => set('print', 'thermalQr', e.target.value)}>
+              <option value="payment">Pay QR if due, else website</option><option value="website">Website QR</option><option value="none">No QR</option>
+            </Select>
+          </Field>
+        </div>
+        {editable && <div className="flex justify-end pt-3"><Button loading={save.isPending} onClick={async () => { await save.mutateAsync('print'); save.mutate('payments'); }}>Save</Button></div>}
+      </Card>
+      <Card className="p-4">
+        <p className="font-semibold">Booking portal — payment to book</p>
+        <p className="text-xs text-muted-foreground">On: patients pay online before the appointment is confirmed (amount kept as advance and adjusted in the bill; refunded automatically if the slot is lost). Off: booking is free.</p>
+        <Toggle label="Payment required to book an appointment online" hint={!p.onlineEnabled ? 'Enable online payments above first' : undefined} checked={ap.required} disabled={!editable || !p.onlineEnabled} onChange={(v) => setAp('required', v)} />
+        {ap.required && (
+          <div className="grid gap-3 pt-3 sm:grid-cols-3">
+            <Field label="Amount"><Select disabled={!editable} value={ap.amountMode || 'doctor_fee'} onChange={(e) => setAp('amountMode', e.target.value)}><option value="doctor_fee">Doctor's consultation fee</option><option value="fixed">Fixed amount</option></Select></Field>
+            <Field label={ap.amountMode === 'fixed' ? 'Fixed amount ₹' : 'Fallback ₹ (any doctor / no fee set)'}><Input type="number" min={1} disabled={!editable} value={ap.amount ?? 500} onChange={(e) => setAp('amount', Number(e.target.value))} /></Field>
+            <Field label="Note shown to patient" className="sm:col-span-3"><Input maxLength={200} disabled={!editable} value={ap.note || ''} onChange={(e) => setAp('note', e.target.value)} /></Field>
+          </div>
+        )}
+        <SaveBtn section="payments" />
+      </Card>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const can = useCan();
   const { data, isLoading } = useGet('/admin/settings', '/admin/settings');
@@ -278,7 +345,7 @@ export default function SettingsPage() {
     <div className="max-w-5xl">
       <PageHeader title="Settings" />
       <Tabs defaultValue="clinic">
-        <TabsList><TabsTrigger value="clinic">Clinic</TabsTrigger><TabsTrigger value="appearance">Appearance</TabsTrigger><TabsTrigger value="billing">Billing & GST</TabsTrigger><TabsTrigger value="notifications">Notifications</TabsTrigger><TabsTrigger value="crm">CRM</TabsTrigger><TabsTrigger value="integrations">Integrations</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="clinic">Clinic</TabsTrigger><TabsTrigger value="appearance">Appearance</TabsTrigger><TabsTrigger value="billing">Billing & GST</TabsTrigger><TabsTrigger value="payments">Payments</TabsTrigger><TabsTrigger value="notifications">Notifications</TabsTrigger><TabsTrigger value="crm">CRM</TabsTrigger><TabsTrigger value="modules">Modules</TabsTrigger><TabsTrigger value="ipd">IPD</TabsTrigger><TabsTrigger value="integrations">Integrations</TabsTrigger></TabsList>
         <TabsContent value="clinic">
           <Card className="p-4">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -292,6 +359,7 @@ export default function SettingsPage() {
         <TabsContent value="appearance">
           <Appearance s={s} setS={setS} editable={editable} saving={appearance.isPending} onSave={() => appearance.mutate()} />
         </TabsContent>
+        <TabsContent value="payments"><PaymentsCard s={s} set={set} editable={editable} SaveBtn={SaveBtn} save={save} /></TabsContent>
         <TabsContent value="billing">
           <Card className="p-4">
             <Toggle label="GST enabled" checked={s.billing.gstEnabled} disabled={!editable} onChange={(v) => set('billing', 'gstEnabled', v)} />
@@ -303,6 +371,31 @@ export default function SettingsPage() {
               <Field label="Invoice footer" className="sm:col-span-2"><Input disabled={!editable} value={s.billing.invoiceFooter} onChange={(e) => set('billing', 'invoiceFooter', e.target.value)} /></Field>
             </div>
             {editable && <div className="flex justify-end gap-2 pt-3"><Button variant="outline" onClick={() => save.mutate('inventory')}>Save inventory</Button><Button loading={save.isPending} onClick={() => save.mutate('billing')}>Save billing</Button></div>}
+          </Card>
+          <Card className="mt-4 p-4">
+            <p className="font-semibold">Loyalty points</p>
+            <p className="text-xs text-muted-foreground">Customers earn points on every bill (tracked by mobile number, so a family shares one wallet) and redeem them in POS / billing.</p>
+            <Toggle label="Loyalty points enabled" checked={s.loyalty?.enabled} disabled={!editable} onChange={(v) => set('loyalty', 'enabled', v)} />
+            <Toggle label="Earn points on services too" hint="Off = points only on medicines & products" checked={s.loyalty?.earnOnServices !== false} disabled={!editable} onChange={(v) => set('loyalty', 'earnOnServices', v)} />
+            <div className="grid gap-3 pt-3 sm:grid-cols-3">
+              <Field label="Points per ₹100 billed"><Input type="number" min={0} step="0.5" disabled={!editable} value={s.loyalty?.earnPer100 ?? 2} onChange={(e) => set('loyalty', 'earnPer100', Number(e.target.value))} /></Field>
+              <Field label="Value of 1 point (₹)"><Input type="number" min={0.01} step="0.01" disabled={!editable} value={s.loyalty?.pointValue ?? 1} onChange={(e) => set('loyalty', 'pointValue', Number(e.target.value))} /></Field>
+              <Field label="Minimum points to redeem"><Input type="number" min={0} disabled={!editable} value={s.loyalty?.minRedeem ?? 50} onChange={(e) => set('loyalty', 'minRedeem', Number(e.target.value))} /></Field>
+              <Field label="Max % of a bill payable by points"><Input type="number" min={0} max={100} disabled={!editable} value={s.loyalty?.maxRedeemPct ?? 50} onChange={(e) => set('loyalty', 'maxRedeemPct', Number(e.target.value))} /></Field>
+              <Field label="Points expire after (days)" hint="0 = never"><Input type="number" min={0} disabled={!editable} value={s.loyalty?.expiryDays ?? 365} onChange={(e) => set('loyalty', 'expiryDays', Number(e.target.value))} /></Field>
+            </div>
+            <p className="mt-2 rounded-md bg-muted p-2 text-xs text-muted-foreground">Example: a ₹1,000 bill earns {Math.floor(10 * (s.loyalty?.earnPer100 ?? 2))} points = ₹{(Math.floor(10 * (s.loyalty?.earnPer100 ?? 2)) * (s.loyalty?.pointValue ?? 1)).toFixed(2)} off a later bill.</p>
+            <SaveBtn section="loyalty" />
+          </Card>
+          <Card className="mt-4 p-4">
+            <p className="font-semibold">Print & QR code</p>
+            <Toggle label="QR code on bills, receipts & PDFs" hint="Scanning opens your website" checked={s.print?.showQr !== false} disabled={!editable} onChange={(v) => set('print', 'showQr', v)} />
+            <div className="grid gap-3 pt-3 sm:grid-cols-2">
+              <Field label="QR opens this link" hint={`Empty = clinic website (${s.clinic?.website || 'set it under Clinic'})`}><Input disabled={!editable} placeholder="https://centreforpilesandfistula.com" value={s.print?.qrUrl || ''} onChange={(e) => set('print', 'qrUrl', e.target.value)} /></Field>
+              <Field label="Thermal printer paper"><Select disabled={!editable} value={s.print?.thermalWidth || '80'} onChange={(e) => set('print', 'thermalWidth', e.target.value)}><option value="80">80 mm (3 inch)</option><option value="58">58 mm (2 inch)</option></Select></Field>
+              <Field label="Thermal receipt footer" className="sm:col-span-2"><Input disabled={!editable} maxLength={200} value={s.print?.thermalFooter || ''} onChange={(e) => set('print', 'thermalFooter', e.target.value)} /></Field>
+            </div>
+            <SaveBtn section="print" />
           </Card>
         </TabsContent>
         <TabsContent value="notifications">
@@ -317,6 +410,7 @@ export default function SettingsPage() {
               ['reminders', 'Appointment reminders', '24 hours and 2 hours before'],
               ['noShow', 'Missed appointment nudge', 'Same evening, with booking link'],
               ['prescription', 'Prescription', 'Medicines + PDF after the doctor saves it'],
+              ['ipd', 'Admission & discharge (IPD)', 'Admission confirmation + discharge summary PDF'],
               ['invoice', 'Invoice / POS bill', 'Amount, balance + invoice PDF'],
               ['paymentReceipt', 'Payment & advance receipts', 'Each payment, advance received / refunded'],
               ['refunds', 'Returns & refunds', 'Credit note and refund amount'],
@@ -335,6 +429,23 @@ export default function SettingsPage() {
           </Card>
           <IvrCard s={s} set={set} editable={editable} onSave={() => save.mutate('crm')} saving={save.isPending && save.variables === 'crm'} />
           <Stages />
+        </TabsContent>
+        <TabsContent value="modules">
+          <ModulesCard s={s} setS={setS} />
+        </TabsContent>
+        <TabsContent value="ipd">
+          <Card className="p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Doctor visit charge per round (₹)" hint="Posted when a doctor-round note is added (can be unticked per note)"><Input type="number" min="0" disabled={!editable} value={s.ipd?.doctorVisitRate ?? 500} onChange={(e) => set('ipd', 'doctorVisitRate', Number(e.target.value))} /></Field>
+              <Field label="Grace hours before a new day is charged" hint="Room rent counts every started 24 h after this grace"><Input type="number" min="0" max="12" disabled={!editable} value={s.ipd?.graceHours ?? 2} onChange={(e) => set('ipd', 'graceHours', Number(e.target.value))} /></Field>
+              <Field label="Ward visiting hours (printed on attendant passes)" className="sm:col-span-2"><Input disabled={!editable} maxLength={120} value={s.ipd?.visitingHours || ''} onChange={(e) => set('ipd', 'visitingHours', e.target.value)} /></Field>
+              <Field label="Attendant pass rules" className="sm:col-span-2"><Input disabled={!editable} maxLength={300} value={s.ipd?.passRules || ''} onChange={(e) => set('ipd', 'passRules', e.target.value)} /></Field>
+              <Field label="Operation theatres (comma separated)" className="sm:col-span-2"><Input disabled={!editable} value={(s.ipd?.otRooms || ['OT-1', 'OT-2']).join(', ')} onChange={(e) => set('ipd', 'otRooms', e.target.value.split(',').map((x) => x.trim()).filter(Boolean))} /></Field>
+            </div>
+            <Toggle label="Auto-charge doctor rounds" checked={s.ipd?.autoChargeRounds !== false} disabled={!editable} onChange={(v) => set('ipd', 'autoChargeRounds', v)} />
+            <p className="pt-2 text-xs text-muted-foreground">Ward rates: IPD → Wards & Beds. Packages: IPD → Packages.</p>
+            <SaveBtn section="ipd" />
+          </Card>
         </TabsContent>
         <TabsContent value="integrations" className="space-y-4">
           <IntegrationSettings editable={editable} />

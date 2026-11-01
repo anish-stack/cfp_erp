@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Trash2, Plus, ScanBarcode, Wallet } from 'lucide-react';
+import { Trash2, Plus, ScanBarcode, Wallet, TicketPercent, Award, X, Loader2, QrCode } from 'lucide-react';
+import { usePayConfig } from '@/components/billing/CollectOnline';
 import { Input, Select } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,6 +10,7 @@ import { Field } from '@/components/common/Field';
 import { PatientPicker } from '@/components/clinic/PatientPicker';
 import { get } from '@/lib/api';
 import { useDebounce } from '@/hooks/useDebounce';
+import { errMsg } from '@/lib/utils';
 import { useAction, useBranches } from '@/hooks/queries';
 import { post } from '@/lib/api';
 import { useAuth, useCan } from '@/store/auth';
@@ -63,6 +65,11 @@ export function Composer({ source = 'billing', initial = {}, onDone }) {
   const [pay, setPay] = useState([{ mode: 'cash', amount: '', reference: '' }]);
   const [useAdvance, setUseAdvance] = useState(false);
   const [notes, setNotes] = useState('');
+  const [couponInput, setCouponInput] = useState('');
+  const [coupon, setCoupon] = useState(''); // applied code
+  const [points, setPoints] = useState(0);
+  const [couponErr, setCouponErr] = useState('');
+  const { data: payCfg } = usePayConfig();
   useEffect(() => { if (initial.patient) setPatient(initial.patient); }, [initial.patient]);
   useEffect(() => { if (initial.items?.length) setLines(initial.items); }, [initial.items]);
   useEffect(() => { if (branchId) setBranch(branchId); }, [branchId]);
@@ -75,25 +82,41 @@ export function Composer({ source = 'billing', initial = {}, onDone }) {
     return [...ls, { product: p._id, description: p.name, qty: 1, rate: p.sellPrice, discountPct: 0, gstRate: p.gstRate, stock: p.stock, type: p.type }];
   });
   const upd = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const total = useMemo(() => Math.round(lines.reduce((a, l) => a + lineTotal(l), 0)), [lines]);
+  const localTotal = useMemo(() => Math.round(lines.reduce((a, l) => a + lineTotal(l), 0)), [lines]);
+  const itemsBody = useMemo(() => lines.filter((l) => l.description && Number(l.qty) > 0).map((l) => ({ product: l.product, description: l.product ? undefined : l.description, qty: Number(l.qty), rate: Number(l.rate), discountPct: Number(l.discountPct) || 0, ...(l.product ? {} : { gstRate: Number(l.gstRate) || 0 }) })), [lines]);
+  const custBody = walkin && (customer.name || customer.phone) ? customer : undefined;
+  // server quote = exact coupon / points / GST maths (debounced)
+  const qBody = useDebounce(JSON.stringify({ branch, patient: walkin ? undefined : patient?._id, customer: custBody, items: itemsBody, couponCode: coupon || undefined, redeemPoints: points || undefined }), 300);
+  const quote = useQuery({
+    queryKey: ['bill-quote', qBody], enabled: !!branch && itemsBody.length > 0, retry: false, staleTime: 10_000,
+    queryFn: () => post('/billing/quote', JSON.parse(qBody)),
+  });
+  const qd = quote.data;
+  const quoteErr = quote.error ? errMsg(quote.error) : '';
+  const total = qd && !quote.isError ? qd.grandTotal : localTotal;
+  const loy = qd?.loyalty;
+  useEffect(() => { if (quote.isError && coupon) { setCouponErr(quoteErr); setCoupon(''); } }, [quote.isError]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (loy && points > loy.maxRedeemable) setPoints(loy.maxRedeemable); }, [loy?.maxRedeemable]); // eslint-disable-line react-hooks/exhaustive-deps
   const advUse = useAdvance ? Math.min(adv?.balance || 0, total) : 0;
   const paying = r2(pay.reduce((a, p) => a + (Number(p.amount) || 0), 0));
   const due = r2(total - advUse - paying);
 
-  const submit = useAction(() => post(source === 'pos' ? '/billing/pos/checkout' : '/billing/invoices', {
+  const submit = useAction((opts = {}) => post(source === 'pos' ? '/billing/pos/checkout' : '/billing/invoices', {
     branch,
     patient: walkin ? undefined : patient?._id,
-    customer: walkin && (customer.name || customer.phone) ? customer : undefined,
+    customer: custBody,
     appointment: initial.appointment,
     doctor: initial.doctor,
-    items: lines.map((l) => ({ product: l.product, description: l.product ? undefined : l.description, qty: Number(l.qty), rate: Number(l.rate), discountPct: Number(l.discountPct) || 0, ...(l.product ? {} : { gstRate: Number(l.gstRate) || 0 }) })),
-    payments: pay.filter((p) => Number(p.amount) > 0).map((p) => ({ mode: p.mode, amount: Number(p.amount), reference: p.reference || undefined })),
+    items: itemsBody,
+    couponCode: coupon || undefined,
+    redeemPoints: points || undefined,
+    payments: (opts.online ? [] : pay).filter((p) => Number(p.amount) > 0).map((p) => ({ mode: p.mode, amount: Number(p.amount), reference: p.reference || undefined })),
     useAdvance,
     notes: notes || undefined,
-  }), { success: (inv) => `Invoice ${inv.invoiceNo} created`, invalidate: ['/billing/invoices', 'dashboard', 'psearch', 'advance'], onSuccess: onDone });
+  }), { success: (inv) => `Invoice ${inv.invoiceNo} created`, invalidate: ['/billing/invoices', 'dashboard', 'psearch', 'advance', 'bill-quote'], onSuccess: (inv, opts) => onDone?.(inv, { collect: !!opts?.online && inv.balance > 0 }) });
 
   const stockIssue = lines.some((l) => l.stock !== null && l.stock !== undefined && l.type !== 'service' && Number(l.qty) > l.stock);
-  const valid = branch && lines.length && lines.every((l) => l.description && Number(l.qty) > 0) && (walkin || patient) && due >= -0.01 && !stockIssue;
+  const valid = branch && lines.length && lines.every((l) => l.description && Number(l.qty) > 0) && (walkin || patient) && due >= -0.01 && !stockIssue && !quote.isFetching && !(quote.isError && itemsBody.length);
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
@@ -145,7 +168,50 @@ export function Composer({ source = 'billing', initial = {}, onDone }) {
       </div>
 
       <Card className="h-fit space-y-4 p-4 lg:sticky lg:top-0">
-        <div className="flex items-baseline justify-between"><span className="text-sm text-muted-foreground">Total (incl. GST, rounded)</span><span className="text-2xl font-semibold">{inr(total)}</span></div>
+        {qd && (qd.discount > 0 || qd.coupon || loy?.redeemValue > 0) && (
+          <div className="space-y-0.5 text-sm">
+            <div className="flex justify-between text-muted-foreground"><span>Items</span><span>{inr(qd.subtotal)}</span></div>
+            {qd.discount - (qd.coupon?.discount || 0) - (loy?.redeemValue || 0) > 0.009 && <div className="flex justify-between text-muted-foreground"><span>Item discounts</span><span>− {inr(qd.discount - (qd.coupon?.discount || 0) - (loy?.redeemValue || 0))}</span></div>}
+            {qd.coupon && <div className="flex justify-between text-emerald-700"><span>Coupon {qd.coupon.code}</span><span>− {inr(qd.coupon.discount)}</span></div>}
+            {loy?.redeemValue > 0 && <div className="flex justify-between text-emerald-700"><span>{loy.redeemed} points</span><span>− {inr(loy.redeemValue)}</span></div>}
+          </div>
+        )}
+        <div className="flex items-baseline justify-between"><span className="text-sm text-muted-foreground">Total (incl. GST, rounded)</span><span className="flex items-center gap-2 text-2xl font-semibold">{quote.isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}{inr(total)}</span></div>
+
+        {/* coupon */}
+        <div className="space-y-1.5">
+          {coupon && qd?.coupon ? (
+            <div className="flex items-center justify-between rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-sm dark:bg-emerald-950/30">
+              <span className="flex items-center gap-2"><TicketPercent className="h-4 w-4 text-emerald-600" /><b>{qd.coupon.code}</b>{qd.coupon.description && <span className="text-xs text-muted-foreground">{qd.coupon.description}</span>}</span>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setCoupon(''); setCouponInput(''); }}><X /></Button>
+            </div>
+          ) : (
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (couponInput.trim()) { setCouponErr(''); setCoupon(couponInput.trim().toUpperCase()); } }}>
+              <div className="relative flex-1"><TicketPercent className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" /><Input className="h-8 pl-8 uppercase" placeholder="Coupon code" value={couponInput} onChange={(e) => setCouponInput(e.target.value)} /></div>
+              <Button type="submit" size="sm" variant="outline" className="h-8" disabled={!couponInput.trim() || !itemsBody.length}>Apply</Button>
+            </form>
+          )}
+          {(couponErr || (quoteErr && !coupon)) && <p className="text-xs text-destructive">{couponErr || quoteErr}</p>}
+        </div>
+
+        {/* loyalty points */}
+        {loy?.enabled && loy.mobile && (
+          <div className="space-y-1.5 rounded-md border p-2.5 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2"><Award className="h-4 w-4 text-amber-500" /> Loyalty points</span>
+              <Badge variant="warning">{loy.balance} pts = {inr(loy.balance * loy.pointValue)}</Badge>
+            </div>
+            {loy.balance >= loy.minRedeem && loy.maxRedeemable > 0 ? (
+              <div className="flex items-center gap-2">
+                <Input className="h-8" type="number" min={0} max={loy.maxRedeemable} value={points || ''} placeholder={`Up to ${loy.maxRedeemable}`} onChange={(e) => setPoints(Math.max(0, Math.min(loy.maxRedeemable, parseInt(e.target.value, 10) || 0)))} />
+                <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => setPoints(points ? 0 : loy.maxRedeemable)}>{points ? 'Clear' : 'Use max'}</Button>
+              </div>
+            ) : <p className="text-xs text-muted-foreground">{loy.balance < loy.minRedeem ? `Redeem from ${loy.minRedeem} points` : 'Nothing to redeem on this bill'}</p>}
+            {loy.willEarn > 0 && <p className="text-xs text-emerald-700">Will earn {loy.willEarn} points on this bill</p>}
+            {loy.expiringSoon > 0 && <p className="text-xs text-amber-700">{loy.expiringSoon} points expire within 30 days</p>}
+          </div>
+        )}
+        {qd?.loyalty?.enabled && !qd.loyalty.mobile && <p className="text-xs text-muted-foreground">Add the customer's mobile number to earn / redeem loyalty points.</p>}
         {adv?.balance > 0 && (
           <label className="flex items-center justify-between rounded-md border bg-accent/40 p-2 text-sm">
             <span className="flex items-center gap-2"><input type="checkbox" checked={useAdvance} onChange={(e) => setUseAdvance(e.target.checked)} /><Wallet className="h-4 w-4" /> Use advance</span>
@@ -170,7 +236,8 @@ export function Composer({ source = 'billing', initial = {}, onDone }) {
           <div className={cn('flex justify-between font-semibold', due < -0.01 && 'text-destructive')}><span>{due < -0.01 ? 'Excess' : 'Balance due'}</span><span>{inr(Math.abs(due))}</span></div>
         </div>
         <Input placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
-        <Button className="w-full" size="lg" disabled={!valid} loading={submit.isPending} onClick={() => submit.mutate()}>{source === 'pos' ? 'Checkout' : 'Create invoice'}</Button>
+        <Button className="w-full" size="lg" disabled={!valid} loading={submit.isPending && !submit.variables?.online} onClick={() => submit.mutate({})}>{source === 'pos' ? 'Checkout' : 'Create invoice'}</Button>
+        {payCfg?.enabled && total > 0 && <Button className="w-full" variant="outline" disabled={!valid || paying > 0} loading={submit.isPending && submit.variables?.online} onClick={() => submit.mutate({ online: true })}><QrCode /> {source === 'pos' ? 'Checkout' : 'Create'} & collect online (UPI QR / link)</Button>}
       </Card>
     </div>
   );

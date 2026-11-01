@@ -65,10 +65,13 @@ export async function staffProfile(reqUser, perms) {
   const user = await User.findById(reqUser._id).populate('role', 'name slug scope').populate('branches', 'name code slug');
   const all = perms.has('*');
   const modules = MODULE_KEYS.filter((k) => all || perms.has(`${k}.view`)).map((k) => ({ key: k, ...MODULES[k] }));
+  const { getSettings } = await import('../../models/Settings.js');
+  const f = (await getSettings()).features || {};
   return {
     user,
     permissions: all ? ['*'] : [...perms],
     modules,
+    features: { ipd: f.ipd === true, exotel: f.exotel === true, marketing: f.marketing === true },
   };
 }
 

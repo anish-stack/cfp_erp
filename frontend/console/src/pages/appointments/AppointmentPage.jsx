@@ -19,9 +19,12 @@ import { PrescriptionList } from '@/components/clinic/PrescriptionList';
 import { CallButton } from '@/components/clinic/Calling';
 import { RecordForm } from '@/pages/patients/ClinicalForms';
 import { BookDialog } from './BookDialog';
+import { AdmitDialog } from '@/components/ipd/AdmitDialog';
+import { BedDouble, Tags } from 'lucide-react';
+import { StickersDialog } from '@/components/print/PrintDialogs';
 import { useGet, useAction } from '@/hooks/queries';
 import { api, post, patch, openFile } from '@/lib/api';
-import { useCan } from '@/store/auth';
+import { useCan, useFeature } from '@/store/auth';
 import { fmtDate, fmtTime, fmtDateTime, ageOf, inr, titleCase } from '@/lib/utils';
 
 const STEPS = ['booked', 'confirmed', 'checked_in', 'in_consultation', 'completed'];
@@ -88,7 +91,10 @@ export default function AppointmentPage() {
   const records = useGet(['records', id], '/clinical/records', { patient: pid, appointment: id }, { enabled: !!pid && medical });
   const timeline = useGet(['timeline', pid], `/clinical/timeline/${pid}`, undefined, { enabled: !!pid });
   const [cancel, setCancel] = useState(false);
+  const [stickers, setStickers] = useState(false);
   const [resched, setResched] = useState(false);
+  const [admit, setAdmit] = useState(false);
+  const feat = useFeature();
   const [notes, setNotes] = useState(null);
   const [tab, setTab] = useState('rx');
   const inv = ['/appointments', 'dashboard', 'availability'];
@@ -105,13 +111,16 @@ export default function AppointmentPage() {
 
   return (
     <div className="space-y-4">
+      <StickersDialog open={stickers} onOpenChange={setStickers} appointment={a} />
       <button onClick={() => nav('/appointments')} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> Appointments</button>
       <PageHeader
         title={`${p?.name} · ${fmtTime(a.start)}`}
         description={`${a.bookingId} · ${fmtDate(a.date)} · ${a.doctor?.name} · ${a.branch?.name}`}
         actions={<>
           <Button variant="outline" onClick={() => openFile(`/appointments/${id}/slip`)}><Printer /> Slip</Button>
+          <Button variant="outline" onClick={() => setStickers(true)}><Tags /> Stickers</Button>
           {can('appointments.edit') && <Button variant="outline" loading={resend.isPending} onClick={() => resend.mutate()}><MessageCircle /> WhatsApp</Button>}
+          {feat('ipd') && can('ipd.create') && ['checked_in', 'in_consultation', 'completed'].includes(a.status) && <Button variant="outline" onClick={() => setAdmit(true)}><BedDouble /> Admit (IPD)</Button>}
           {!a.invoice && can('billing.create') && <Button onClick={() => nav(`/billing/new?appointment=${a._id}`)}><Receipt /> Bill</Button>}
           {a.invoice && <Button variant="outline" onClick={() => nav(`/billing/${a.invoice._id}`)}><Receipt /> {a.invoice.invoiceNo}</Button>}
         </>}
@@ -221,6 +230,7 @@ export default function AppointmentPage() {
 
       <ConfirmDialog open={cancel} onOpenChange={setCancel} title="Cancel appointment" reason destructive confirmText="Cancel appointment" loading={doCancel.isPending} onConfirm={(r) => doCancel.mutate(r)} />
       <BookDialog open={resched} onOpenChange={setResched} mode="reschedule" appointment={a} onDone={(n) => nav(`/appointments/${n._id}`)} />
+      <AdmitDialog open={admit} onOpenChange={setAdmit} patient={a.patient} appointment={a._id} branch={a.branch?._id || a.branch} doctor={a.doctor?._id || a.doctor} />
     </div>
   );
 }

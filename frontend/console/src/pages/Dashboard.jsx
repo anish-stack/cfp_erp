@@ -1,5 +1,9 @@
 import { useNavigate } from 'react-router-dom';
-import { CalendarDays, IndianRupee, UserPlus, BellRing, Target, PackageX, Clock, AlertTriangle } from 'lucide-react';
+import { CalendarDays, IndianRupee, UserPlus, BellRing, Target, PackageX, Clock, AlertTriangle, BedDouble, LogOut } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { get } from '@/lib/api';
+import { useCan, useFeature } from '@/store/auth';
+import { useBranchKey } from '@/hooks/queries';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from 'recharts';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatCard } from '@/components/common/StatCard';
@@ -16,6 +20,12 @@ export default function Dashboard() {
   const me = useAuth((s) => s.me);
   const { data: d, isLoading } = useGet('dashboard', '/reports/dashboard', undefined, { refetchInterval: 60_000 });
   const a = d?.access || {};
+  const can = useCan();
+  const feat = useFeature();
+  const ipdOn = feat('ipd') && can('ipd.view');
+  const bk = useBranchKey();
+  const ipd = useQuery({ queryKey: ['ipd-board', bk], enabled: ipdOn, queryFn: () => get('/ipd/board'), refetchInterval: 60_000 });
+  const ip = ipd.data?.stats;
 
   return (
     <div className="space-y-5">
@@ -23,6 +33,8 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {(a.appointments || isLoading) && <StatCard label="Appointments today" value={d?.appointments.total ?? 0} hint={d ? `${d.appointments.byStatus.completed || 0} completed · ${d.appointments.byStatus.checked_in || 0} waiting` : ''} icon={CalendarDays} loading={isLoading} onClick={() => nav('/appointments')} />}
         {(a.billing || isLoading) && <StatCard label="Collection today" value={inr(d?.collectionToday)} hint={d ? `${inr(d.outstanding.amt)} outstanding` : ''} icon={IndianRupee} tone="emerald" loading={isLoading} onClick={() => nav('/payments')} />}
+ {ipdOn && ip?.total > 0 && <StatCard label="IPD occupancy" value={`${ip.occupancy}%`} hint={`${ip.occupied} in-patients · ${ip.available} beds free`} icon={BedDouble} tone="red" loading={ipd.isLoading} onClick={() => nav('/ipd')} />}
+        {ipdOn && ipd.data?.dischargesDue > 0 && <StatCard label="Discharges due" value={ipd.data.dischargesDue} icon={LogOut} tone="violet" onClick={() => nav('/ipd/admissions?status=discharge_initiated')} />}
         <StatCard label="New patients" value={d?.newPatients ?? 0} icon={UserPlus} tone="sky" loading={isLoading} onClick={() => nav('/patients')} />
         <StatCard label="Follow-ups due" value={d?.followupsDue ?? 0} icon={BellRing} tone="amber" loading={isLoading} onClick={() => nav('/followups')} />
         {a.leads && <StatCard label="Leads today" value={d?.leadsToday ?? 0} icon={Target} tone="violet" loading={isLoading} onClick={() => nav('/leads')} />}

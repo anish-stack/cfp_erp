@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { uploadRoot } from '../middleware/upload.js';
 import { getSettings } from '../models/Settings.js';
 import { ApiError } from '../utils/ApiError.js';
+import QRCode from 'qrcode';
 
 const DIR = path.join(uploadRoot, 'branding');
 fs.mkdirSync(DIR, { recursive: true });
@@ -45,8 +46,30 @@ function logoBuffer(file) {
 }
 
 /** Everything the PDF renderers need, honouring Settings → Billing → "Show logo on PDFs" */
+/** where the QR on bills / PDFs points: Settings → Print → QR link, else the clinic website */
+export function qrTarget(s) {
+  if (s.print?.showQr === false) return null;
+  const u = (s.print?.qrUrl || s.clinic?.website || '').trim();
+  if (!u) return null;
+  return /^https?:\/\//.test(u) ? u : `https://${u}`;
+}
+const qrCache = new Map();
+/** QR PNG buffer (cached per URL) */
+export async function qrPng(url) {
+  if (!url) return null;
+  if (!qrCache.has(url)) {
+    if (qrCache.size > 20) qrCache.clear();
+    qrCache.set(url, await QRCode.toBuffer(url, { type: 'png', errorCorrectionLevel: 'M', margin: 1, width: 240 }));
+  }
+  return qrCache.get(url);
+}
+export async function qrDataUrl(url) {
+  return url ? QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 240 }) : null;
+}
+
 export async function pdfBranding() {
   const s = await getSettings();
+  const qrUrl = qrTarget(s);
   const showLogo = s.billing?.showLogoOnPdf !== false;
   const hex = (v) => (/^#[0-9a-f]{6}$/i.test(v || '') ? v : null);
   return {
@@ -56,5 +79,7 @@ export async function pdfBranding() {
     color: hex(s.theme?.pdf) || hex(s.theme?.console?.primary) || '#e21f26',
     rxFooter: s.pdf?.rxFooter,
     showSignature: s.pdf?.showSignature !== false,
+    qrUrl,
+    qr: qrUrl ? await qrPng(qrUrl).catch(() => null) : null,
   };
 }

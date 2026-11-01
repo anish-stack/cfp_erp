@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
+import InstallPrompt from '@/components/pwa/InstallPrompt';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import { AppShell, useNavItems } from '@/components/layout/AppShell';
 import { ROUTES } from '@/routes';
-import { useAuth, useCan } from '@/store/auth';
+import { useAuth, useCan, useFeature } from '@/store/auth';
 import { refreshToken } from '@/lib/api';
 import { loadMe } from '@/lib/session';
 import { appMode } from '@/lib/mode';
@@ -28,8 +29,10 @@ function ThemeLoader() {
   return null;
 }
 
-function Guard({ perm, children }) {
+function Guard({ perm, feature, children }) {
   const can = useCan();
+  const feat = useFeature();
+  if (!feat(feature)) return <EmptyState icon={ShieldAlert} title="Module disabled" description="This module is switched off. A Super Admin can enable it in Settings → Modules." />;
   if (perm && !can(perm)) return <EmptyState icon={ShieldAlert} title="No access" description="You don't have permission for this page. Contact your administrator." />;
   return children;
 }
@@ -74,12 +77,13 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<Protected />}>
             <Route index element={<Home />} />
-            {ROUTES.map((r) => <Route key={r.path} path={r.path} element={<Guard perm={r.perm}><r.el /></Guard>} />)}
+            {ROUTES.map((r) => <Route key={r.path} path={r.path} element={<Guard perm={r.perm} feature={r.feature}><r.el /></Guard>} />)}
             <Route path="*" element={<EmptyState title="Page not found" />} />
           </Route>
         </Routes>
       </BrowserRouter>
       <Toaster richColors position="top-right" closeButton />
+      <InstallPrompt title="Install CPF Console" text="Open the console like an app — one tap from your desktop or phone." />
     </QueryClientProvider>
   );
 }

@@ -1,5 +1,6 @@
 import { withTransaction } from '../../config/db.js';
 import { Appointment, ACTIVE_STATUS } from '../../models/Appointment.js';
+import { SlotHold, HOLD_MINUTES } from '../../models/SlotHold.js';
 import { Branch } from '../../models/Branch.js';
 import { Patient } from '../../models/Patient.js';
 import { ApiError } from '../../utils/ApiError.js';
@@ -11,22 +12,40 @@ import * as notify from '../../services/notify.js';
 
 const isDupSlot = (e) => e?.code === 11000 && (e.keyPattern?.slotKey || /slotKey/.test(e.message));
 
-/** Insert appointment, trying seats 1..capacity. Unique slotKey index makes this race-safe. */
-async function insertWithSeat(data, capacity, branchCode) {
-  for (let seat = 1; seat <= capacity; seat++) {
+const activeHold = (key, notId) => SlotHold.exists({ key, expiresAt: { $gt: new Date() }, ...(notId ? { _id: { $ne: notId } } : {}) });
+
+/**
+ * Insert appointment, trying seats 1..capacity. Unique slotKey index makes appointment-vs-appointment race-safe.
+ * Holds live in another collection, so both sides use "write, then check the other": whoever writes second
+ * always sees the first write and backs off → a seat can never end up both held and booked.
+ * own = the caller's own hold (tried first, ignored in checks)
+ */
+async function insertWithSeat(data, capacity, branchCode, own) {
+  const seats = Array.from({ length: capacity }, (_, i) => i + 1);
+  if (own?.key) {
+    const s = Number(own.key.split('|')[3]);
+    if (seats.includes(s)) seats.sort((a, b) => (a === s ? -1 : b === s ? 1 : a - b));
+  }
+  for (const seat of seats) {
+    const slotKey = `${data.doctor}|${data.date}|${data.start}|${seat}`;
+    if (await activeHold(slotKey, own?._id)) continue;
+    let appt;
     try {
-      return await withTransaction(async (session) => {
+      appt = await withTransaction(async (session) => {
         const bookingId = await nextBookingId(branchCode, data.date, session);
-        const [appt] = await Appointment.create(
-          [{ ...data, bookingId, slotKey: `${data.doctor}|${data.date}|${data.start}|${seat}` }],
-          { session }
-        );
-        return appt;
+        const [a] = await Appointment.create([{ ...data, bookingId, slotKey }], { session });
+        return a;
       });
     } catch (e) {
       if (isDupSlot(e)) continue;
       throw e;
     }
+    if (await activeHold(slotKey, own?._id)) {
+      // someone locked this seat at the same instant → give it back, try the next seat
+      await Appointment.deleteOne({ _id: appt._id });
+      continue;
+    }
+    return appt;
   }
   return null;
 }
@@ -49,8 +68,11 @@ export async function book(opts) {
     if (dup) throw ApiError.conflict('This patient already has an appointment on this date at this branch');
   }
 
-  const any = !doctorId || doctorId === 'any';
-  const avail = await availability({ branchId, date, doctorId: any ? null : doctorId, staff, onlineOnly: !staff });
+  // the patient's own seat lock (paid booking): book exactly that doctor/seat if still possible
+  const own = opts.holdId ? await SlotHold.findOne({ _id: opts.holdId, ...(accountId ? { account: accountId } : {}) }).lean() : null;
+  const docId = own ? String(own.doctor) : doctorId;
+  const any = !docId || docId === 'any';
+  const avail = await availability({ branchId, date, doctorId: any ? null : docId, staff, onlineOnly: !staff, excludeHold: own?._id });
 
   // candidates: doctors with this slot available, least-booked first
   const candidates = avail
@@ -80,9 +102,11 @@ export async function book(opts) {
         rescheduledFrom: opts.rescheduledFrom,
       },
       slot.capacity,
-      branch.code
+      branch.code,
+      own && String(own.doctor) === String(d.doctor._id) ? own : null
     );
     if (appt) {
+      if (own) await SlotHold.deleteOne({ _id: own._id });
       await linkBranch(patient._id, branch._id);
       appt.reminderJobIds = await notify.scheduleReminders(appt);
       await Appointment.updateOne({ _id: appt._id }, { reminderJobIds: appt.reminderJobIds });
@@ -194,3 +218,49 @@ export async function walkin({ patientId, branchId, doctorId, start, complaint, 
   }
   return setStatus(appt, 'checked_in');
 }
+
+/**
+ * Lock one seat of a slot for a paying patient (portal). Returns the hold.
+ * One active hold per account: a new hold releases the previous one.
+ */
+export async function createHold({ accountId, patientId, branchId, doctorId, date, start, minutes = HOLD_MINUTES }) {
+  const patient = await Patient.findOne({ _id: patientId, isActive: true, account: accountId }).select('_id').lean();
+  if (!patient) throw ApiError.notFound('Patient profile not found');
+  const dup = await Appointment.exists({ patient: patient._id, date, branch: branchId, status: { $in: ACTIVE_STATUS } });
+  if (dup) throw ApiError.conflict('This patient already has an appointment on this date at this branch');
+  await SlotHold.deleteMany({ account: accountId });
+
+  const any = !doctorId || doctorId === 'any';
+  const avail = await availability({ branchId, date, doctorId: any ? null : doctorId, staff: false, onlineOnly: true });
+  const candidates = avail
+    .map((d) => ({ d, slot: d.slots.find((s) => s.start === start && s.available) }))
+    .filter((c) => c.slot)
+    .sort((a, b) => a.slot.booked - b.slot.booked);
+  const now = () => new Date();
+  for (const { d, slot } of candidates) {
+    for (let seat = 1; seat <= slot.capacity; seat++) {
+      const key = `${d.doctor._id}|${date}|${slot.start}|${seat}`;
+      if (await Appointment.exists({ slotKey: key })) continue;
+      let hold = null;
+      for (let attempt = 0; attempt < 2 && !hold; attempt++) {
+        try {
+          hold = await SlotHold.create({ key, branch: branchId, doctor: d.doctor._id, date, start: slot.start, end: slot.end, account: accountId, patient: patient._id, expiresAt: new Date(Date.now() + minutes * 60_000) });
+        } catch (e) {
+          if (e?.code !== 11000) throw e;
+          // an expired lock not yet swept by the TTL monitor → remove it and try once more
+          const gone = await SlotHold.deleteOne({ key, expiresAt: { $lte: now() } });
+          if (!gone.deletedCount) break;
+        }
+      }
+      if (!hold) continue;
+      if (await Appointment.exists({ slotKey: key })) { // booked at the same instant → back off
+        await SlotHold.deleteOne({ _id: hold._id });
+        continue;
+      }
+      return hold;
+    }
+  }
+  throw ApiError.conflict('Selected slot was just taken. Please choose another');
+}
+
+export const releaseHold = (holdId, accountId) => SlotHold.deleteOne({ _id: holdId, account: accountId });

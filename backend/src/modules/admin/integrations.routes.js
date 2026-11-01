@@ -69,7 +69,7 @@ r.get('/ai-models', permit('settings.manage_settings'), asyncHandler(async (_req
 }));
 
 /** connectivity tests */
-r.post('/test/:kind', permit('settings.manage_settings'), validate({ params: z.object({ kind: z.enum(['storage', 'smtp', 'exotel', 'whatsapp', 'ai']) }), body: z.object({ to: z.string().max(120).optional() }) }), asyncHandler(async (req, res) => {
+r.post('/test/:kind', permit('settings.manage_settings'), validate({ params: z.object({ kind: z.enum(['storage', 'smtp', 'exotel', 'whatsapp', 'ai', 'razorpay']) }), body: z.object({ to: z.string().max(120).optional() }) }), asyncHandler(async (req, res) => {
   const { kind } = req.params;
   try {
     if (kind === 'storage') {
@@ -104,6 +104,13 @@ r.post('/test/:kind', permit('settings.manage_settings'), validate({ params: z.o
       const used = lastUsedModel();
       const note = cfg.HF_MODEL !== 'auto' && used !== cfg.HF_MODEL ? ` (your model "${cfg.HF_MODEL}" is not served by your providers — save "${used}" or "auto" as Model)` : '';
       return ok(res, { ok: true, message: `${providerName()} OK — ${used} replied "${reply.trim().slice(0, 30)}" in ${((Date.now() - t0) / 1000).toFixed(1)}s${note}` });
+    }
+    if (kind === 'razorpay') {
+      const rzp = await import('../../services/razorpay.js');
+      if (!rzp.razorpayConfigured()) throw new Error('Key ID and Key secret are required');
+      await rzp.ping();
+      const live = String(cfg.RAZORPAY_KEY_ID).startsWith('rzp_live_');
+      return ok(res, { ok: true, message: `Razorpay keys OK (${live ? 'LIVE mode — real money' : 'TEST mode'})${cfg.RAZORPAY_WEBHOOK_SECRET ? '' : ' · add the webhook secret so payments are recorded automatically'}` });
     }
     if (kind === 'whatsapp') {
       const { sendWapp, wappConfigured, normalizeMobile } = await import('../../services/wapp.js');

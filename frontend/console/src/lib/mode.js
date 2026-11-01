@@ -9,7 +9,7 @@ export function appMode() {
 
 export const MODE_GROUPS = {
   admin: null, // all
-  clinic: ['General', 'Clinical', 'Finance', 'Pharmacy', 'Insights', 'Organization'],
+  clinic: ['General', 'Clinical', 'IPD', 'Finance', 'Pharmacy', 'Insights', 'Organization'],
   crm: ['General', 'CRM', 'Insights'],
 };
 

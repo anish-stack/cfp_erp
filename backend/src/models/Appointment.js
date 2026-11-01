@@ -16,6 +16,7 @@ const schema = new mongoose.Schema(
     type: { type: String, enum: ['online', 'phone', 'walkin', 'followup', 'crm'], default: 'online' },
     visitType: { type: String, enum: ['new', 'followup', 'procedure'], default: 'new' },
     status: { type: String, enum: APPT_STATUS, default: 'booked' },
+    prepaid: { amount: Number, provider: String, paymentId: String, receipt: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' }, at: Date, refundedAt: Date, refundId: String }, // online booking payment
     // set only while active: doctor|date|start|seat ; unique sparse → atomic double-booking guard
     slotKey: { type: String },
     tokenNo: Number,

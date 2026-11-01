@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { UserRound, UserPlus, Pencil, Trash2, FileText, Receipt, Download, Eye, LogOut, X } from 'lucide-react';
+import { UserRound, UserPlus, Pencil, Trash2, FileText, Receipt, Download, Eye, LogOut, X, BedDouble } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -95,6 +95,7 @@ export default function Profile() {
   const me = useQuery({ queryKey: ['me', token], enabled: !!token, queryFn: () => get('/portal/me') });
   const rx = useQuery({ queryKey: ['my-rx'], enabled: !!token && tab === 'rx', queryFn: () => get('/portal/prescriptions') });
   const inv = useQuery({ queryKey: ['my-inv'], enabled: !!token && tab === 'bills', queryFn: () => get('/portal/invoices') });
+  const stays = useQuery({ queryKey: ['my-stays'], enabled: !!token && tab === 'stays', queryFn: () => get('/portal/admissions') });
 
   if (!token) return <Card className="mx-auto max-w-md p-6 text-center"><p className="mb-4">Login with your mobile number to manage your profile.</p><Button asChild><Link to="/login?next=/profile">Login / Book</Link></Button></Card>;
 
@@ -114,7 +115,7 @@ export default function Profile() {
         <Button size="sm" variant="outline" onClick={logoutAll}><LogOut /> Logout all devices</Button>
       </div>
       <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
-        {[['family', 'Family'], ['rx', 'Prescriptions'], ['bills', 'Bills']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={cn('flex-1 rounded-md py-1.5', tab === k ? 'bg-card font-medium shadow' : 'text-muted-foreground')}>{l}</button>)}
+        {[['family', 'Family'], ['rx', 'Prescriptions'], ['bills', 'Bills'], ['stays', 'Hospital stays']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={cn('flex-1 rounded-md py-1.5', tab === k ? 'bg-card font-medium shadow' : 'text-muted-foreground')}>{l}</button>)}
       </div>
 
       {tab === 'family' && (
@@ -150,6 +151,22 @@ export default function Profile() {
               </div>
               <Button size="icon" variant="ghost" onClick={() => doc('rx', r._id, r.rxNo)(false)}><Eye /></Button>
               <Button size="icon" variant="ghost" onClick={() => doc('rx', r._id, r.rxNo)(true)}><Download /></Button>
+            </Card>
+          ))}
+        </div>
+      ))}
+
+      {tab === 'stays' && (stays.isLoading ? <Skeleton className="h-32" /> : !stays.data?.length ? <Card className="p-6 text-center text-sm text-muted-foreground">No hospital admissions</Card> : (
+        <div className="space-y-2">
+          {stays.data.map((s) => (
+            <Card key={s._id} className="flex items-center gap-3 p-4">
+              <BedDouble className="h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{s.patient?.name} · {fmtDate(s.admittedAt)}{s.dischargedAt ? ` → ${fmtDate(s.dischargedAt)}` : ''}</p>
+                <p className="truncate text-xs text-muted-foreground">{s.admissionNo} · {s.branch?.name} · {s.doctor?.name}{s.plannedProcedure?.name ? ` · ${s.plannedProcedure.name}` : ''}</p>
+              </div>
+              <Badge variant={s.status === 'discharged' ? 'success' : 'warning'}>{s.status === 'discharged' ? 'Discharged' : 'Admitted'}</Badge>
+              {s.status === 'discharged' && <Button size="icon" variant="ghost" title="Discharge summary" onClick={() => doc('discharge', s._id, `Discharge-${s.admissionNo}`)(true)}><Download /></Button>}
             </Card>
           ))}
         </div>

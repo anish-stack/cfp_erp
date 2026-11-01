@@ -26,6 +26,9 @@ import clinicalRoutes from './modules/clinical/clinical.routes.js';
 import inventoryRoutes from './modules/inventory/inventory.routes.js';
 import billingRoutes from './modules/billing/billing.routes.js';
 import crmRoutes from './modules/crm/crm.routes.js';
+import paymentRoutes from './modules/payments/payments.routes.js';
+import lookupRoutes from './modules/lookup/lookup.routes.js';
+import { adminRoutes as wheelAdminRoutes, publicRoutes as wheelPublicRoutes } from './modules/wheels/wheels.routes.js';
 import publicRoutes from './modules/public/public.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import reportRoutes from './modules/reports/reports.routes.js';
@@ -33,6 +36,13 @@ import callRoutes from './modules/calls/calls.routes.js';
 import mediaRoutes from './modules/cms/media.routes.js';
 import integrationRoutes from './modules/admin/integrations.routes.js';
 import cmsAiRoutes from './modules/crm/ai.routes.js';
+import marketingRoutes from './modules/marketing/marketing.routes.js';
+import ipdRoutes from './modules/ipd/ipd.routes.js';
+import { auth } from './middleware/auth.js';
+import { branchScope } from './middleware/branchScope.js';
+import { requireFeature } from './middleware/feature.js';
+import ipdOpsRoutes from './modules/ipd/ipd.ops.routes.js';
+import ipdClaimRoutes from './modules/ipd/ipd.claims.js';
 import { LOCAL_MEDIA_DIR } from './services/storage.js';
 import exotelWebhooks from './modules/calls/exotel.webhooks.js';
 
@@ -49,7 +59,8 @@ export function buildApp() {
     })
   );
   app.use(compression());
-  app.use(express.json({ limit: '1mb' }));
+  // raw body kept only for the payment webhook (signature is computed over the exact bytes)
+  app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { if (req.originalUrl.startsWith('/api/v1/payments/webhook')) req.rawBody = buf; } }));
   app.use(express.urlencoded({ extended: true, limit: '200kb' })); // Exotel form callbacks
   app.use(cookieParser());
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
@@ -75,6 +86,7 @@ export function buildApp() {
   v1.use('/staff', userRoutes);
   v1.use('/patients', patientRoutes);
   v1.use('/public/exotel', exotelWebhooks);
+  v1.use('/public/wheels', wheelPublicRoutes);
   v1.use('/public', publicRoutes);
   v1.use('/portal/appointments', portalApptRoutes);
   v1.use('/portal', portalRoutes);
@@ -83,11 +95,16 @@ export function buildApp() {
   v1.use('/appointments', appointmentRoutes);
   v1.use('/clinical', clinicalRoutes);
   v1.use('/inventory', inventoryRoutes);
+  v1.use('/payments', paymentRoutes);
+  v1.use('/lookup', lookupRoutes);
   v1.use('/billing', billingRoutes);
   v1.use('/crm/calls', callRoutes);
   v1.use('/cms/media', mediaRoutes);
   v1.use('/crm/ai', cmsAiRoutes);
+  v1.use('/marketing', auth, requireFeature('marketing'), marketingRoutes);
+  v1.use('/ipd', auth, requireFeature('ipd'), branchScope, ipdOpsRoutes, ipdClaimRoutes, ipdRoutes);
   v1.use('/admin/integrations', integrationRoutes);
+  v1.use('/crm/wheels', auth, wheelAdminRoutes);
   v1.use('/crm', crmRoutes);
   v1.use('/admin', adminRoutes);
   v1.use('/reports', reportRoutes);

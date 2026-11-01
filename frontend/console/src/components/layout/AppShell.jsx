@@ -1,8 +1,9 @@
 import { Suspense, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Menu, LogOut, KeyRound, ChevronDown, Building2, X } from 'lucide-react';
+import { ScannerButton, ScannerDialog, useScannerHotkeys } from '@/components/scanner/ScannerDialog';
 import { ROUTES, GROUP_ORDER } from '@/routes';
-import { useAuth, useCan } from '@/store/auth';
+import { useAuth, useCan, useFeature } from '@/store/auth';
 import { appMode, MODE_GROUPS, MODE_TITLES } from '@/lib/mode';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,9 +14,10 @@ import { cn } from '@/lib/utils';
 
 export function useNavItems() {
   const can = useCan();
+  const feat = useFeature();
   const mode = appMode();
   const groups = MODE_GROUPS[mode];
-  return ROUTES.filter((r) => !r.hidden && (!r.perm || can(r.perm)) && (!groups || groups.includes(r.group)));
+  return ROUTES.filter((r) => !r.hidden && feat(r.feature) && (!r.perm || can(r.perm)) && (!groups || groups.includes(r.group)));
 }
 
 function Sidebar({ onNavigate }) {
@@ -42,7 +44,7 @@ function Sidebar({ onNavigate }) {
                 <NavLink
                   key={i.path}
                   to={i.path}
-                  end={i.path === '/billing'}
+                  end={ROUTES.some((r) => !r.hidden && r.path !== i.path && r.path.startsWith(`${i.path}/`))}
                   onClick={onNavigate}
                   className={({ isActive }) => cn('flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-foreground/80 transition-colors hover:bg-accent hover:text-accent-foreground', isActive && 'bg-accent font-medium text-accent-foreground')}
                 >
@@ -86,6 +88,7 @@ export function AppShell() {
   const me = useAuth((s) => s.me);
   const logout = useAuth((s) => s.logout);
   const nav = useNavigate();
+  useScannerHotkeys();
   return (
     <div className="flex h-screen overflow-hidden">
       <aside className="hidden w-60 shrink-0 border-r bg-sidebar lg:block"><Sidebar /></aside>
@@ -104,6 +107,9 @@ export function AppShell() {
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)}><Menu /></Button>
             <BranchSwitcher />
           </div>
+          <div className="flex items-center gap-2">
+          <ScannerButton />
+          <ScannerDialog />
           <Dropdown>
             <DropdownTrigger asChild>
               <button className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent">
@@ -121,6 +127,7 @@ export function AppShell() {
               <DropdownItem onSelect={() => logout()}><LogOut /> Sign out</DropdownItem>
             </DropdownContent>
           </Dropdown>
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto p-3 scrollbar-thin sm:p-6">
           <Suspense fallback={<div className="space-y-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-64 w-full" /></div>}>

@@ -51,7 +51,15 @@ async function downloadLogo() {
   }
 }
 
-export async function baseSeed({ log = console.log } = {}) {
+/**
+ * opts (all default true so the demo seed keeps its behaviour; the live seed turns the extras off):
+ *  catalogue  – medicines & consumables list with sample prices
+ *  wards      – sample wards & beds per branch
+ *  packages   – sample IPD packages
+ *  rxTemplates – prescription types (needs the catalogue)
+ *  doctors    – the 2 doctors from the website + default weekly rota
+ */
+export async function baseSeed({ log = console.log, catalogue = true, wards = true, packages = true, rxTemplates = true, doctors = true } = {}) {
   await Promise.all([
     import('../models/Counter.js'), import('../models/AuditLog.js'), import('../models/Otp.js'), import('../models/PatientAccount.js'),
     import('../models/DoctorSchedule.js'), import('../models/ScheduleException.js'),
@@ -112,7 +120,7 @@ export async function baseSeed({ log = console.log } = {}) {
   log('✔ clinic profile, IVR menu (1-5 → branches)');
 
   // ---- doctors (no rota: set weekly schedules in Console → Doctors)
-  const noDoctors = !(await Doctor.exists({}));
+  const noDoctors = doctors && !(await Doctor.exists({}));
   for (const d of noDoctors ? DOCTORS : []) {
     const exists = await Doctor.findOne({ name: d.name });
     if (!exists) await Doctor.create({ ...d, branches: Object.values(branchIds), consultationFee: 0, followUpFee: 0, acceptsOnlineBooking: true });
@@ -120,7 +128,7 @@ export async function baseSeed({ log = console.log } = {}) {
   log(noDoctors ? `✔ doctors: ${DOCTORS.map((d) => d.name).join(', ')}` : '· Doctors already has data — skipped');
 
   // ---- default rota (only for doctors with no schedule yet) → every branch bookable
-  for (const [docName, rows] of Object.entries(DEFAULT_ROTA)) {
+  for (const [docName, rows] of doctors ? Object.entries(DEFAULT_ROTA) : []) {
     const d = await Doctor.findOne({ name: docName });
     if (!d || (await DoctorSchedule.exists({ doctor: d._id }))) continue;
     for (const [days, code, sessions] of rows) {
@@ -147,7 +155,7 @@ export async function baseSeed({ log = console.log } = {}) {
   const catIds = Object.fromEntries((await Category.find().lean()).map((c) => [c.name, c._id]));
   if (!catIds.Allopathic) catIds.Allopathic = (await Category.create({ name: 'Allopathic' }))._id;
   const MED = {};
-  const noStockProducts = !(await Product.exists({ type: { $in: ['medicine', 'consumable', 'product'] } }));
+  const noStockProducts = catalogue && !(await Product.exists({ type: { $in: ['medicine', 'consumable', 'product'] } }));
   for (const [i, [sku, name, genericName, cat, type, unit, gstRate, mrp, cost, reorderLevel, prescriptionRequired]] of MEDICINES.entries()) {
     if (!noStockProducts) { MED[sku] = await Product.findOne({ sku }).lean(); continue; }
     MED[sku] = await Product.findOneAndUpdate(
@@ -156,10 +164,47 @@ export async function baseSeed({ log = console.log } = {}) {
       { upsert: true, new: true }
     ).lean();
   }
-  log(noStockProducts ? `✔ ${MEDICINES.length} medicines & consumables in catalogue` : '· Products (medicines) already has data — skipped');
+  log(!catalogue ? '· medicines catalogue skipped (add your own in Console → Products)' : noStockProducts ? `✔ ${MEDICINES.length} medicines & consumables in catalogue` : '· Products (medicines) already has data — skipped');
+
+  // ---- IPD wards & beds (only when none exist; rates editable in Console → IPD → Wards & Beds)
+  const { Ward, Bed } = await import('../models/Ipd.js');
+  if (!wards) log('· wards & beds skipped (create yours in Console → IPD → Wards & Beds)');
+  else if (!(await Ward.exists({}))) {
+    const LAYOUT = {
+      big: [['General Ward', 'general', 1500, 500, 'GW-', 6], ['Semi-Private', 'semi_private', 2500, 700, 'SP-', 4], ['Private Room', 'private', 4000, 1000, 'PR-', 3], ['Day Care', 'day_care', 1000, 300, 'DC-', 4], ['Recovery', 'recovery', 0, 500, 'RC-', 2]],
+      small: [['Day Care', 'day_care', 1000, 300, 'DC-', 3], ['Private Room', 'private', 3000, 800, 'PR-', 1]],
+    };
+    let nBeds = 0;
+    for (const [code, id] of Object.entries(branchIds)) {
+      const big = ['ROH', 'PVH'].includes(code);
+      for (const [name, type, dailyRate, nursingRate, prefix, count] of LAYOUT[big ? 'big' : 'small']) {
+        const w = await Ward.create({ branch: id, name, type, dailyRate, nursingRate, floor: type === 'private' ? '2nd' : '1st' });
+        for (let i = 1; i <= count; i++) { await Bed.create({ branch: id, ward: w._id, number: `${prefix}${i}`, features: type === 'private' ? ['AC', 'Attached bath', 'Attendant sofa'] : type === 'recovery' ? ['Oxygen', 'Monitor'] : ['AC'] }); nBeds++; }
+      }
+    }
+    log(`✔ IPD: wards & ${nBeds} beds across ${Object.keys(branchIds).length} branches`);
+  } else log('· IPD wards already exist — skipped');
+
+  // ---- IPD surgery / day-care packages (only when none exist; prices editable in Console → IPD → Packages)
+  const { IpdPackage } = await import('../models/Ipd.js');
+  if (packages && !(await IpdPackage.exists({}))) {
+    const svcId = async (sku) => (await Product.findOne({ sku }).select('_id').lean())?._id;
+    const INC = ['Room (general ward) for the included days', 'Nursing care', 'Surgeon & anaesthesia charges', 'OT charges', 'Consultant visits during stay'];
+    const EXC = ['Medicines & consumables beyond the package', 'Investigations / lab tests', 'Room upgrade difference', 'Extra days beyond the package'];
+    const PKGS = [
+      ['Laser Haemorrhoidoplasty (Piles) — package', 'SRV-LASER-PILES', 35000, 1],
+      ['Laser Fistula (FiLaC) — package', 'SRV-LASER-FIST', 40000, 1],
+      ['Laser Fissure — package', 'SRV-LASER-FISS', 30000, 1],
+      ['Kshar Sutra Therapy (Fistula) — day care', 'SRV-KSHAR', 18000, 1],
+      ['Pilonidal Sinus Laser — package', 'SRV-PNS', 35000, 2],
+      ['Infrared Coagulation (IRC) — day care', 'SRV-IRC', 6000, 1],
+    ];
+    for (const [name, sku, price, includedDays] of PKGS) await IpdPackage.create({ name, procedure: await svcId(sku), price, includedDays, wardType: 'general', inclusions: INC, exclusions: EXC });
+    log(`✔ ${PKGS.length} IPD packages`);
+  }
 
   // ---- prescription types
-  const noTpl = !(await PrescriptionTemplate.exists({}));
+  const noTpl = rxTemplates && catalogue && !(await PrescriptionTemplate.exists({}));
   for (const t of noTpl ? RX_TEMPLATES : []) {
     if (await PrescriptionTemplate.exists({ name: t.name })) continue;
     await PrescriptionTemplate.create({
@@ -167,7 +212,7 @@ export async function baseSeed({ log = console.log } = {}) {
       items: t.items.map(([sku, dose, frequency, timing, duration]) => ({ product: MED[sku]?._id, name: MED[sku]?.name || sku, dose, frequency, timing, duration })),
     });
   }
-  log(`✔ ${RX_TEMPLATES.length} prescription types`);
+  log(noTpl ? `✔ ${RX_TEMPLATES.length} prescription types` : '· prescription types skipped / already present');
 
   // ---- super admin
   if (!env.SEED_ADMIN_EMAIL || !env.SEED_ADMIN_PASSWORD) {

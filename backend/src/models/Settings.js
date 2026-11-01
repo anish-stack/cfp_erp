@@ -26,6 +26,52 @@ const schema = new mongoose.Schema(
       showLogoOnPdf: { type: Boolean, default: true },
     },
     inventory: { expiryAlertDays: { type: Number, default: 90 } },
+    // loyalty points: earned on every bill (keyed by mobile, so family members share one wallet)
+    loyalty: {
+      enabled: { type: Boolean, default: false },
+      earnPer100: { type: Number, default: 2 }, // points per ₹100 billed
+      pointValue: { type: Number, default: 1 }, // ₹ value of one point when redeemed
+      minRedeem: { type: Number, default: 50 }, // need at least this many points to redeem
+      maxRedeemPct: { type: Number, default: 50 }, // max % of the bill payable with points
+      expiryDays: { type: Number, default: 365 }, // 0 = never expire
+      earnOnServices: { type: Boolean, default: true },
+    },
+    // online payments (Razorpay)
+    payments: {
+      onlineEnabled: { type: Boolean, default: false }, // payment links / UPI QR in the console
+      linkExpiryHours: { type: Number, default: 48 },
+      sendLinkOnWhatsapp: { type: Boolean, default: true },
+      upiId: { type: String, default: '' }, // fallback static UPI QR on thermal receipts when Razorpay is off
+      upiName: { type: String, default: '' },
+      appointment: {
+        required: { type: Boolean, default: false }, // booking portal: pay before the appointment is confirmed
+        amountMode: { type: String, enum: ['doctor_fee', 'fixed'], default: 'doctor_fee' },
+        amount: { type: Number, default: 500 }, // fixed amount, or fallback when the doctor has no fee / "any doctor"
+        note: { type: String, default: 'Adjusted in your consultation bill. Refundable if you cancel 2 hours before.' },
+      },
+    },
+    // receipt / QR
+    print: {
+      qrUrl: { type: String, default: '' }, // QR on bills & PDFs → main website ('' = clinic website)
+      showQr: { type: Boolean, default: true },
+      thermalWidth: { type: String, enum: ['58', '80'], default: '80' },
+      thermalQr: { type: String, enum: ['payment', 'website', 'none'], default: 'payment' }, // payment = scan-to-pay QR when a balance is due
+      thermalFooter: { type: String, default: 'Thank you! Get well soon.' },
+    },
+    // optional modules — only the Super Admin can switch these on; off = hidden in every console + API returns 403
+    features: {
+      ipd: { type: Boolean, default: false },
+      exotel: { type: Boolean, default: false },
+      marketing: { type: Boolean, default: false },
+    },
+    ipd: {
+      doctorVisitRate: { type: Number, default: 500 },
+      autoChargeRounds: { type: Boolean, default: true }, // each doctor-round note posts a visit charge
+      otRooms: { type: [String], default: ['OT-1', 'OT-2'] },
+      graceHours: { type: Number, default: 2 },
+      visitingHours: { type: String, default: 'Morning 10:00–12:00 · Evening 17:00–19:00' },
+      passRules: { type: String, default: 'One attendant at a time · Carry this pass always · Not transferable · Return at discharge' },
+    },
     // colour palette (hex). console + booking portal + PDFs
     theme: {
       console: { primary: { type: String, default: '#e21f26' }, sidebar: { type: String, default: '#ffffff' }, radius: { type: Number, default: 10 } },
@@ -47,6 +93,7 @@ const schema = new mongoose.Schema(
       noShow: { type: Boolean, default: true },
       reminders: { type: Boolean, default: true },
       prescription: { type: Boolean, default: true },
+      ipd: { type: Boolean, default: true }, // admission + discharge summary
       invoice: { type: Boolean, default: true },
       paymentReceipt: { type: Boolean, default: true },
       refunds: { type: Boolean, default: true },
@@ -79,3 +126,5 @@ export async function getSettings() {
 export const clearSettingsCache = () => {
   cache = null;
 };
+export const FEATURES = ['ipd', 'exotel', 'marketing'];
+export const featureOn = async (key) => (await getSettings()).features?.[key] === true;

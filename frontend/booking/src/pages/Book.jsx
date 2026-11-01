@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, MapPin, Phone, Stethoscope, UserPlus, UserRound, CalendarCheck2, Clock, ShieldCheck, Pencil, Download, ArrowLeft } from 'lucide-react';
+import { Check, CreditCard, Wallet, RotateCcw, CalendarClock, MapPin, Phone, Stethoscope, UserPlus, UserRound, CalendarCheck2, Clock, ShieldCheck, Pencil, Download, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DateStrip, SlotGrid } from '@/components/SlotGrid';
 import { get, post, openDoc } from '@/lib/api';
+import { payWithRazorpay } from '@/lib/razorpay';
 import { usePatient, getUtm } from '@/store/patient';
 import { cn, errMsg, fmtDate, fmtTime, todayIST, ageOf } from '@/lib/utils';
 
@@ -103,6 +104,25 @@ export default function Book() {
     }
   };
 
+  // an earlier payment whose slot was lost (or the patient closed the browser after paying)
+  const [reuse, setReuse] = useState(null); // { opId, amount }
+  const [lost, setLost] = useState(false);
+  const [refunding, setRefunding] = useState(false);
+  const pending = useQuery({ queryKey: ['pay-pending', token], enabled: !!token, queryFn: () => get('/portal/appointments/payments/pending'), staleTime: 30_000 });
+  useEffect(() => { if (!reuse && pending.data?.length) setReuse({ opId: pending.data[0].opId, amount: pending.data[0].amount }); }, [pending.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const refund = async () => {
+    if (!reuse) return;
+    setRefunding(true);
+    try {
+      const r = await post(`/portal/appointments/payments/${reuse.opId}/refund`, {});
+      toast.success(`Refund of ₹${Number(r.amount).toLocaleString('en-IN')} started — it reaches your account in 5–7 working days`);
+      setReuse(null);
+      setLost(false);
+      qc.invalidateQueries({ queryKey: ['pay-pending'] });
+    } catch (e) { toast.error(errMsg(e)); } finally { setRefunding(false); }
+  };
+  const payInfo = useQuery({ queryKey: ['booking-pay', slot?.doctor || doctor], enabled: !!slot, queryFn: () => get('/public/booking-payment', { doctor: slot?.doctor || doctor }), staleTime: 60_000 });
+  const mustPay = payInfo.data?.required;
   const confirm = async () => {
     setBusy(true);
     try {
@@ -114,11 +134,36 @@ export default function Book() {
         pid = p._id;
         qc.invalidateQueries({ queryKey: ['me'] });
       }
-      const a = await post('/portal/appointments', { patient: pid, branch: branch._id, doctor: slot.doctor, date, start: slot.start, complaint: complaint || undefined, utm: getUtm() });
+      const body = { patient: pid, branch: branch._id, doctor: slot.doctor, date, start: slot.start, complaint: complaint || undefined, utm: getUtm() };
+      if (mustPay && reuse) {
+        body.payment = { opId: reuse.opId, reuse: true }; // use the earlier payment
+      } else if (mustPay) {
+        // 1) seat is locked for 10 min (nobody else can take it)  2) pay  3) server verifies + books the locked seat
+        const o = await post('/portal/appointments/pay-order', { patient: pid, branch: branch._id, doctor: slot.doctor, date, start: slot.start });
+        try {
+          const r = await payWithRazorpay({ keyId: o.keyId, orderId: o.orderId, amount: o.amount, name: o.name, description: o.description, prefill: o.prefill, color: getComputedStyle(document.documentElement).getPropertyValue('--brand') || undefined });
+          body.payment = { opId: o.opId, ...r };
+        } catch (payErr) {
+          post(`/portal/appointments/hold/${o.holdId}/release`, {}).catch(() => {}); // free the seat right away
+          throw payErr;
+        }
+      }
+      const a = await post('/portal/appointments', body);
       setBooked(a);
       setStep(3);
+      if (body.payment?.reuse) { setReuse(null); qc.invalidateQueries({ queryKey: ['pay-pending'] }); }
       qc.invalidateQueries({ queryKey: ['my-appts'] });
     } catch (e) {
+      const det = e.response?.data?.details;
+      if (det?.code === 'SLOT_TAKEN_PAID') {
+        // payment is safe → let the patient pick another slot or take a refund
+        setReuse({ opId: det.opId, amount: det.amount });
+        setLost(true);
+        setSlot(null);
+        qc.invalidateQueries({ queryKey: ['pub-avail'] });
+        setStep(1);
+        return;
+      }
       toast.error(errMsg(e));
       if (e.response?.status === 409) { setSlot(null); qc.invalidateQueries({ queryKey: ['pub-avail'] }); setStep(1); }
     } finally {
@@ -131,7 +176,7 @@ export default function Book() {
     return (
       <Card className="mx-auto max-w-md space-y-4 p-6 text-center">
         <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Check className="h-7 w-7" /></div>
-        <div><h2 className="text-xl font-semibold">Appointment booked</h2><p className="text-sm text-muted-foreground">Confirmation sent on WhatsApp</p></div>
+        <div><h2 className="text-xl font-semibold">Appointment booked</h2><p className="text-sm text-muted-foreground">Confirmation sent on WhatsApp</p>{booked.prepaid?.amount > 0 && <p className="mt-1 text-sm font-medium text-emerald-700">Paid ₹{Number(booked.prepaid.amount).toLocaleString('en-IN')} — adjusted in your bill</p>}</div>
         <div className="rounded-lg bg-muted p-4 text-left text-sm">
           <p className="text-xs uppercase text-muted-foreground">Booking ID</p>
           <p className="font-mono text-lg font-semibold">{booked.bookingId}</p>
@@ -159,6 +204,29 @@ export default function Book() {
       </div>
       <Steps step={step} />
 
+      {lost && reuse && (
+        <div className="fixed inset-0 z-50 grid place-items-end bg-black/50 p-0 sm:place-items-center sm:p-4" role="dialog" aria-modal="true">
+          <Card className="w-full max-w-md space-y-4 rounded-b-none p-6 sm:rounded-b-xl">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-amber-100 text-amber-700"><CalendarClock className="h-6 w-6" /></div>
+            <div className="text-center">
+              <h2 className="text-lg font-semibold">That slot was just taken</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Your payment of <b className="text-foreground">₹{Number(reuse.amount).toLocaleString('en-IN')}</b> is safe. What would you like to do?</p>
+            </div>
+            <div className="grid gap-2">
+              <Button size="lg" onClick={() => setLost(false)}><CalendarClock /> Choose another slot (no extra payment)</Button>
+              <Button size="lg" variant="outline" loading={refunding} onClick={refund}><RotateCcw /> Get a refund of ₹{Number(reuse.amount).toLocaleString('en-IN')}</Button>
+            </div>
+            <p className="text-center text-[11px] text-muted-foreground">Refunds go back to the same UPI / card in 5–7 working days.</p>
+          </Card>
+        </div>
+      )}
+      {reuse && !lost && step !== 3 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <span className="flex items-center gap-2"><Wallet className="h-4 w-4" /> You have an unused booking payment of <b>₹{Number(reuse.amount).toLocaleString('en-IN')}</b> — pick a slot to use it.</span>
+          <Button size="sm" variant="outline" loading={refunding} onClick={refund}>Refund instead</Button>
+        </div>
+      )}
+
       {step === 1 && (
         <div className="space-y-5">
           <section>
@@ -182,7 +250,7 @@ export default function Book() {
                 <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
                   <Chip active={doctor === 'any'} onClick={() => setDoctor('any')}><p className="font-medium">Any available</p><p className="text-[11px] opacity-80">Earliest slot</p></Chip>
                   {doctors.data?.map((d) => (
-                    <Chip key={d._id} active={doctor === d._id} onClick={() => setDoctor(d._id)}><p className="font-medium">{d.name}</p><p className="max-w-[180px] truncate text-[11px] opacity-80">{d.qualification}</p></Chip>
+                    <Chip key={d._id} active={doctor === d._id} onClick={() => setDoctor(d._id)}><div className="flex items-center gap-2">{d.photo && <img src={d.photo} alt="" className="h-9 w-9 shrink-0 rounded-full border-2 border-white object-cover object-top" />}<div><p className="font-medium">{d.name}</p><p className="max-w-[180px] truncate text-[11px] opacity-80">{d.qualification}</p></div></div></Chip>
                   ))}
                 </div>
               </section>
@@ -265,7 +333,15 @@ export default function Book() {
                     </div>
                   )}
                   <div className="space-y-1.5"><Label>Anything the doctor should know? (optional)</Label><Textarea rows={2} maxLength={500} value={complaint} onChange={(e) => setComplaint(e.target.value)} /></div>
-                  <Button className="w-full" size="lg" loading={busy} onClick={confirm}>Confirm booking</Button>
+                  {mustPay && reuse && <p className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">Your earlier payment of ₹{Number(reuse.amount).toLocaleString('en-IN')} will be used for this appointment.</p>}
+                  {mustPay && !reuse && (
+                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+                      <p className="flex items-center gap-2 font-semibold"><CreditCard className="h-4 w-4 text-primary" /> Booking amount ₹{Number(payInfo.data.amount).toLocaleString('en-IN')}</p>
+                      {payInfo.data.note && <p className="mt-1 text-xs text-muted-foreground">{payInfo.data.note}</p>}
+                      <p className="mt-1 text-[11px] text-muted-foreground">Your slot is reserved for 10 minutes while you pay securely by UPI, card or net banking (Razorpay).</p>
+                    </div>
+                  )}
+                  <Button className="w-full" size="lg" loading={busy || (slot && payInfo.isLoading)} onClick={confirm}>{mustPay && reuse ? 'Book with my earlier payment' : mustPay ? `Pay ₹${Number(payInfo.data.amount).toLocaleString('en-IN')} & book` : 'Confirm booking'}</Button>
                 </>
               )}
             </Card>
