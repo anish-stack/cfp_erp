@@ -65,7 +65,8 @@ export function buildApp() {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-branch-id', 'x-api-key', 'X-Requested-With', 'Accept'],
+      exposedHeaders: ['Content-Disposition'],
     })
   );
   app.use(compression());
