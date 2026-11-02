@@ -52,10 +52,24 @@ export function buildApp() {
   app.disable('x-powered-by');
 
   app.use(helmet());
+  const corsOrigins = (env.corsOrigins || '')
+    .split(',')
+    .map(origin => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+
   app.use(
     cors({
-      origin: (origin, cb) => (!origin || env.corsOrigins.includes(origin) ? cb(null, true) : cb(new Error('CORS blocked'))),
+      origin: (origin, cb) => {
+        if (!origin || corsOrigins.includes(origin)) {
+          return cb(null, true);
+        }
+
+        console.error('[CORS BLOCKED]:', origin);
+        return cb(new Error(`CORS blocked: ${origin}`));
+      },
       credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     })
   );
   app.use(compression());
