@@ -52,11 +52,7 @@ export function buildApp() {
   app.disable('x-powered-by');
 
   app.use(helmet());
-  const corsOrigins = (env.corsOrigins || '')
-    .split(',')
-    .map(origin => origin.trim().replace(/\/$/, ''))
-    .filter(Boolean);
-
+  const corsOrigins = env.corsOrigins || [];
   app.use(
     cors({
       origin: (origin, cb) => {
