@@ -7,7 +7,7 @@ import PDFDocument from 'pdfkit';
  * Helvetica has no ₹ glyph → "Rs.".
  */
 const A4 = { size: 'A4', margin: 40 };
-const A5 = { size: 'A5', margin: 28 };
+const A5 = { size: 'A5', margin: 20 };
 const GREY = '#5b6472';
 const LIGHT = '#f3f6f8';
 const LINE = '#dfe4ea';
@@ -64,56 +64,100 @@ function newDoc(out, opts = A4, title) {
 const W = (doc) => doc.page.width - doc.page.margins.left - doc.page.margins.right;
 const L = (doc) => doc.page.margins.left;
 
-/** letterhead: colour band, logo, clinic, branch, title pill + meta lines on the right */
 function letterhead(doc, b, branch, title, metaLines = []) {
   const c = b.color || '#0f766e';
   const x0 = L(doc);
   const w = W(doc);
   const small = doc.page.width < 500;
-  doc.rect(0, 0, doc.page.width, 6).fill(c);
-  let x = x0;
-  const top = small ? 18 : 24;
-  const logoSize = small ? 40 : 54;
+
+  const top = small ? 13 : 20;
+  const logoW = small ? 100 : 150;
+  const logoH = small ? 40 : 60;
+  const logoX = small ? Math.max(6, x0 - 11) : x0;
+  const fs = small ? 6.5 : 8;
+  const split = small ? 0.69 : 0.64;
+  const rx = x0 + w * split;
+
+  // top band
+  doc.rect(0, 0, doc.page.width, small ? 5 : 6).fill(c);
+
+  // logo + vertical divider
+  let hasLogo = false;
+  const divX = logoX + logoW + (small ? 7 : 10);
+  let textX = x0;
   if (b.logo) {
     try {
-      doc.image(b.logo, x0, top, { fit: [logoSize, logoSize] });
-      x = x0 + logoSize + 10;
+      doc.image(b.logo, logoX, top, { fit: [logoW, logoH], align: 'left', valign: 'top' });
+      hasLogo = true;
+      textX = divX + (small ? 7 : 10);
     } catch {
-      /* bad image → text header */
+      /* invalid logo → fallback to clinic name */
     }
   }
-  const leftW = w * 0.62 - (x - x0);
-  doc.fillColor(c).font('Helvetica-Bold').fontSize(small ? 12 : 16).text(b.clinic?.name || 'Centre For Piles & Fistula', x, top, { width: leftW });
-  doc.fillColor(GREY).font('Helvetica').fontSize(small ? 6.5 : 8);
-  if (b.clinic?.tagline) doc.text(b.clinic.tagline, x, doc.y + 1, { width: leftW });
-  const addr = branch ? [branch.address?.line1, branch.address?.line2, branch.address?.city, branch.address?.pincode].filter(Boolean).join(', ') : b.clinic?.address;
-  if (branch?.name) doc.font('Helvetica-Bold').fillColor('#333').text(`${branch.name} Branch`, x, doc.y + 2, { width: leftW }).font('Helvetica').fillColor(GREY);
-  if (addr) doc.text(addr, x, doc.y + 1, { width: leftW });
-  const contact = [branch?.phone || b.clinic?.phone ? `Ph: ${branch?.phone || b.clinic?.phone}` : null, b.clinic?.whatsapp ? `WhatsApp: ${b.clinic.whatsapp}` : null, branch?.email || b.clinic?.email].filter(Boolean).join('  |  ');
-  if (contact) doc.text(contact, x, doc.y + 1, { width: leftW });
-  const gst = branch?.gstin || b.clinic?.gstin;
-  if (gst) doc.text(`GSTIN: ${gst}`, x, doc.y + 1, { width: leftW });
-  const leftBottom = doc.y;
 
-  // title pill
-  const rx = x0 + w * 0.62;
-  const rw = w * 0.38;
-  doc.font('Helvetica-Bold').fontSize(small ? 9 : 11);
-  const tw = doc.widthOfString(title) + 18;
-  doc.roundedRect(x0 + w - tw, top, tw, small ? 16 : 20, 4).fill(c);
-  doc.fillColor('#fff').text(title, x0 + w - tw, top + (small ? 4 : 5), { width: tw, align: 'center' });
-  doc.fillColor('#222').font('Helvetica').fontSize(small ? 7 : 8.5);
-  let y = top + (small ? 22 : 28);
+  // left text column
+  const leftW = rx - textX - 6;
+  let y = top;
+  const put = (t, o = {}) => {
+    doc.font(o.bold ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(o.size || fs)
+      .fillColor(o.color || '#222')
+      .text(t, textX, y, { width: leftW });
+    y = doc.y + 1;
+  };
+
+  if (!hasLogo) put(b.clinic?.name || 'Centre For Piles & Fistula', { bold: true, size: small ? 12 : 16, color: c });
+  if (b.clinic?.tagline) put(b.clinic.tagline);
+  if (branch?.name) put(`${branch.name} Branch`, { bold: true });
+
+  const addr = branch
+    ? [branch.address?.line1, branch.address?.line2, branch.address?.city, branch.address?.pincode].filter(Boolean).join(', ')
+    : b.clinic?.address;
+  if (addr) put(addr);
+
+  const phone = branch?.phone || b.clinic?.phone;
+  const contact = [phone && `Ph: ${phone}`, b.clinic?.whatsapp && `WhatsApp: ${b.clinic.whatsapp}`].filter(Boolean).join('  |  ');
+  if (contact) put(contact);
+  const email = branch?.email || b.clinic?.email;
+  if (email) put(email);
+  const gst = branch?.gstin || b.clinic?.gstin;
+  if (gst) put(`GSTIN: ${gst}`);
+
+  const leftBottom = y - 1;
+
+  if (hasLogo) {
+    doc.moveTo(divX, top - 1).lineTo(divX, leftBottom).lineWidth(0.8).strokeColor(c).stroke();
+  }
+
+  // title pill (right)
+  doc.font('Helvetica-Bold').fontSize(small ? 10 : 12);
+  const tw = doc.widthOfString(title) + (small ? 20 : 24);
+  const ph = small ? 18 : 22;
+  const py = small ? 10.5 : 16;
+  doc.roundedRect(x0 + w - tw, py, tw, ph, 4).fill(c);
+  doc.fillColor('#fff').text(title, x0 + w - tw, py + (small ? 4.5 : 5.5), { width: tw, align: 'center', lineBreak: false });
+
+  // meta lines: grey key + bold value, right aligned
+  const mf = small ? 8.5 : 9.5;
+  let my = py + ph + (small ? 6 : 8);
   for (const [k, v] of metaLines) {
     if (!v) continue;
-    doc.font('Helvetica-Bold').fillColor('#222').text(String(v), rx, y, { width: rw, align: 'right' });
-    const vw = Math.min(doc.widthOfString(String(v)), rw);
-    doc.font('Helvetica').fillColor(GREY).text(`${k}:`, rx, y, { width: rw - vw - 4, align: 'right' });
-    y = doc.y + 1;
+    const val = String(v);
+    doc.font('Helvetica-Bold').fontSize(mf);
+    const vw = doc.widthOfString(val);
+    doc.fillColor('#222').text(val, x0 + w - vw, my, { lineBreak: false });
+    doc.font('Helvetica').fillColor(GREY);
+    const key = `${k}:`;
+    const kw = doc.widthOfString(key);
+    doc.text(key, x0 + w - vw - 4 - kw, my, { lineBreak: false });
+    my += mf + 3;
   }
-  const bottom = Math.max(leftBottom, y, top + logoSize) + 8;
-  doc.moveTo(x0, bottom).lineTo(x0 + w, bottom).lineWidth(1).strokeColor(c).stroke();
-  doc.y = bottom + 10;
+
+  // bottom rule
+  const bottom = Math.max(leftBottom, my, top + logoH) + 8;
+  doc.moveTo(x0, bottom).lineTo(x0 + w, bottom).lineWidth(small ? 1.2 : 1).strokeColor(c).stroke();
+
+  doc.y = bottom + 9;
   doc.x = x0;
   doc.fillColor('#222').font('Helvetica').fontSize(9);
 }

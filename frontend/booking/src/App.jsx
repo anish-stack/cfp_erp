@@ -30,8 +30,8 @@ function Shell({ children }) {
       <header className="sticky top-0 z-10 border-b bg-card/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
           <Link to="/" className="flex items-center gap-2 font-semibold">
-            {clinic?.logo ? <img src={clinic.logo} alt="" className="h-9 w-9 rounded-lg object-contain" /> : <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">CPF</span>}
-            <span className="hidden text-sm sm:block">{clinic?.name || 'Centre for Piles & Fistula'}</span>
+            {clinic?.logo ? <img src={clinic.logo} alt="" className="h-36 w-36 rounded-lg object-contain" /> : <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">CPF</span>}
+            {/* <span className="hidden text-sm sm:block">{clinic?.name || 'Centre for Piles & Fistula'}</span> */}
           </Link>
           {!landing && (
             <nav className="flex items-center gap-1 text-sm">

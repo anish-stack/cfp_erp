@@ -74,7 +74,12 @@ export function buildApp() {
   app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { if (req.originalUrl.startsWith('/api/v1/payments/webhook')) req.rawBody = buf; } }));
   app.use(express.urlencoded({ extended: true, limit: '200kb' })); // Exotel form callbacks
   app.use(cookieParser());
-  app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
+  if(env.NODE_ENV === 'development') {
+    app.use((req, _res, next) => {
+      logger.debug({ method: req.method, url: req.url, query: req.query, body: req.body }, 'Request');
+      next();
+    });
+  }
 
   // public media (local storage driver) — images/videos used on landing pages, cross-origin readable
   app.use('/media', (_req, res, next) => { res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); res.setHeader('X-Content-Type-Options', 'nosniff'); next(); },
