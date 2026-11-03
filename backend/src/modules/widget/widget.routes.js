@@ -95,22 +95,34 @@ widgetAssets.get("/frame", (_req, res) => {
 /* ---------------------------------------------------------------- JSON API */
 export const widgetApi = Router();
 
+// first-party apps (admin panel, CRM, ...) listed in CORS_ORIGINS may preview the widget with credentials
+const firstParty = (o) => Boolean(o) && (env.corsOrigins || []).includes(o);
+const originOk = (o) => {
+  const a = allowed();
+  return !o || firstParty(o) || !a.length || a.includes(o);
+};
+
 widgetApi.use(
-  cors({
-    origin: (origin, cb) => {
-      const a = allowed();
-      cb(null, !origin || !a.length || a.includes(origin));
-    },
-    credentials: false,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+  cors((req, cb) => {
+    const o = req.header("Origin");
+    cb(null, {
+      origin: originOk(o),
+      credentials: firstParty(o), // third-party sites never get credentialed access
+      methods: ["GET", "POST", "OPTIONS"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "x-branch-id",
+        "X-Requested-With",
+        "Accept",
+      ],
+    });
   }),
 );
 widgetApi.use(express.json({ limit: "20kb" }));
 widgetApi.use((req, _res, next) => {
-  const a = allowed();
   const o = req.get("origin");
-  if (a.length && o && !a.includes(o))
+  if (o && !originOk(o))
     return next(
       ApiError.forbidden(
         "This website is not allowed to use the booking widget",
