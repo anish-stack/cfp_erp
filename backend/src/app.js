@@ -45,6 +45,7 @@ import ipdOpsRoutes from './modules/ipd/ipd.ops.routes.js';
 import ipdClaimRoutes from './modules/ipd/ipd.claims.js';
 import { LOCAL_MEDIA_DIR } from './services/storage.js';
 import exotelWebhooks from './modules/calls/exotel.webhooks.js';
+import { widgetAssets, widgetApi } from './modules/widget/widget.routes.js';
 
 export function buildApp() {
   const app = express();
@@ -52,6 +53,9 @@ export function buildApp() {
   app.disable('x-powered-by');
 
   app.use(helmet());
+  // embeddable booking widget: has its own CORS (any website) → must sit BEFORE the global CORS whitelist below
+  app.use('/widget', widgetAssets);
+  app.use('/api/v1/widget', widgetApi);
   const corsOrigins = env.corsOrigins || [];
   app.use(
     cors({

@@ -2,7 +2,7 @@ import { lazy } from 'react';
 import {
   LayoutDashboard, CalendarDays, Users, Stethoscope, CalendarClock, BellRing, Receipt, ShoppingCart, Wallet, Banknote,
   Package, Boxes, Truck, ArrowLeftRight, Building2, Target, ListTodo, Megaphone, FileText, BarChart3, UserCog, ShieldCheck,
-  ScrollText, Settings, Bell, Contact, Gauge, PhoneCall, UserPlus, FileStack, BedDouble, ClipboardList, Hotel, HeartPulse, Scissors, ShieldPlus, PackageOpen, ChartColumn, Send, Gift, TicketPercent, CreditCard,
+  ScrollText, Settings, Bell, Contact, Gauge, PhoneCall, UserPlus, FileStack, BedDouble, ClipboardList, Hotel, HeartPulse, Scissors, ShieldPlus, PackageOpen, ChartColumn, Send, Gift, TicketPercent, CreditCard, Globe,
 } from 'lucide-react';
 
 const L = (f) => lazy(f);
@@ -57,6 +57,7 @@ export const ROUTES = [
   { path: '/forms/:id/design', group: 'CRM', perm: 'cms.view', el: L(() => import('@/pages/crm/PageDesigner')), hidden: true },
   { path: '/forms', label: 'CMS & Forms', icon: FileText, group: 'CRM', perm: 'cms.view', el: L(() => import('@/pages/crm/Forms')) },
   { path: '/wheels', label: 'Spin Wheels', icon: Gift, group: 'CRM', perm: 'cms.view', el: L(() => import('@/pages/crm/SpinWheels')) },
+  { path: '/website-widget', label: 'Website Widget', icon: Globe, group: 'CRM', perm: 'cms.view', el: L(() => import('@/pages/crm/WebsiteWidget')) },
 
   { path: '/reports', label: 'Reports', icon: BarChart3, group: 'Insights', perm: 'reports.view', el: L(() => import('@/pages/Reports')) },
 
